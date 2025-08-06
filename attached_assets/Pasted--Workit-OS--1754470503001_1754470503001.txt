@@ -1,0 +1,634 @@
+هبعتله دة 
+بص دي فكرة اداة بعملها 
+شوف وقولي فهمت ايه 
+# Workit.OS — نظرة شاملة ومفصلة للأداة
+
+> **مقدّمة قصيرة:**  
+> Workit.OS هو “نظام تشغيل” كامل لإدارة فرق التسويق، يجمع كل أدوات المتابعة والتعاون في مكان واحد، مستوحًى من Notion وLinear، بتصميم زجاجي جذاب وتجربة Mobile-First متكاملة.
+
+---
+
+## 1. التحدي (Problem Statement)
+- **تشتت الأدوات:** وكالات التسويق تستخدم أدوات متعددة (تاسكات، حضور، تقارير، شات، ملفات…)  
+- **صعوبة المتابعة:** مديرو المشاريع يجدون صعوبة في رصد الأداء في لمحة سريعة.  
+- **قلة التقليدية والتخصيص:** الأدوات غير مصممة خصيصًا لفرق التسويق وما تحتاجه من تقارير ذكية وخدمات عملاء.  
+
+---
+
+## 2. الحلّ: Workit.OS
+Workit.OS يجمع كل هذه الاحتياجات في **Workspace واحد** لكل وكالة أو فريق عمل:
+1. **لوحة تحكم ديناميكية** تعتمد على دور المستخدم.  
+2. **محرّر محتوى شبيه Notion** ببلوكات قابلة للتخصيص.  
+3. **نظام تاسكات متقدم** مع مؤقت عد تنازلي واستراحات.  
+4. **تسجيل حضور/انصراف بضغطة** وشبكة تقارير يومية أوتوماتيكية.  
+5. **مركز ملفات مركزي** مع معاينة فورية وفلاتر قوية.  
+6. **دردشة داخلية** per team/project.  
+7. **بوابة عملاء** مخصصة لكل مشروع.  
+8. **طبقة ذكاء اصطناعي** لتحليل الأداء، وإصدار تقييمات ذكية وتنبيهات.
+
+---
+
+## 3. الأدوار & صلاحياتها
+| الدور            | أبرز المميزات في الـ Dashboard                                             |
+|------------------|-----------------------------------------------------------------------------|
+| **Team Leader**  | عرض كامل لمهام الفريق، تقارير دورية، نسب إتمام، إشعارات ذكية، إدارة Workspaces |
+| **Supervisor**   | متابعة الحضور، مراجعة التقارير، توزيع المهام، إنشاء صفحات للفريق فقط       |
+| **Employee**     | مهامه اليومية، مؤقت علّيق عبر التنقل، رفع تقاريره، متابعة حضوره             |
+| **HR (Life Coach)** | تحليلات حضور/تفاعل، ملاحظات رعاية نفسية، Flags للموظفين المحتاجين لدعم   |
+| **Client**       | عرض تقدم المشروع المخصص، إمكانية التعليق، معاينة الملفات، Approvals         |
+
+---
+
+## 4. المكونات الأساسية (Modules)
+
+1. **Tasks & Timer**  
+   - إنشاء/توزيع مهام  
+   - تقدير الوقت + عد تنازلي + فترات استراحة  
+   - تتبع الأداء وحساب معدل الإنجاز
+
+2. **Attendance**  
+   - Check-In/Check-Out تلقائي أو يدوي  
+   - Flags للحضور المتأخر والغياب  
+   - تكامل مع التقارير الشهرية
+
+3. **Daily Reports & Evaluations**  
+   - قوالب تقارير يومية قابلة للتخصيص  
+   - تحليل أولي عبر AI  
+   - تقييمات شهرية تُحسب من مجموع المهام والحضور والتقارير
+
+4. **Notion-Style Pages**  
+   - محرّر Tiptap headless  
+   - بلوكات: نص، قوائم، صور، ملفات، كود، جداول، Kanban…  
+   - صلاحيات على مستوى الصفحة والبلوك
+
+5. **File Center**  
+   - رفع ومشاركة معاينة (PDF, Image, Video…)  
+   - صلاحيات وصول دقيقة  
+   - فلاتر: المشروع، النوع، التاريخ
+
+6. **Internal Chat**  
+   - قنوات لكل مشروع أو فريق  
+   - رسائل نصية، ملفات، Emojis  
+   - إشعارات فورية
+
+7. **Client Portal**  
+   - لوحة عرض مبسطة للمشروع  
+   - إمكانية التعليق والموافقة  
+   - تحديثات حية وTimeline
+
+8. **AI Assistant**  
+   - توصيات ذكية (إعادة جدولة، تنبيهات تأخير)  
+   - ملخصات آلية لتقارير الأسبوع/الشهر  
+   - تحليل نقاط القوة والضعف
+
+---
+
+## 5. تجربة المستخدم (User Flow)
+
+1. **Onboarding**  
+   - اختيار الدور (Role)  
+   - إنشاء Workspace أو الانضمام لواحد موجود  
+   - إعداد الملف الشخصي واللغة
+
+2. **Home / Dashboard**  
+   - تظهر الواجهة حسب الدور  
+   - Widgets رئيسية (Tasks, Attendance, Reports…)
+
+3. **Daily Routine (Employee)**  
+   - Check-In → Start Task & Timer → Update Progress → Submit Daily Report → Check-Out
+
+4. **Team Oversight (Supervisor & TL)**  
+   - مراجعة تقارير الفريق → إعطاء Feedback → ضبط الجدول الأسبوعي
+
+5. **Client Interaction**  
+   - إرسال دعوة للعميل → عرض المشروع → ترك Feedback → متابعة التحديثات
+
+---
+
+## 6. البنية التقنية (Tech Stack)
+
+- **Frontend:** Next.js 13 (App Router) + TailwindCSS + Lucide Icons + Framer Motion  
+- **i18n & RTL:** next-intl + next-themes  
+- **Backend & DB:** Firebase Authentication + Firestore + Storage  
+- **Realtime & Sync:** Firestore Listeners + Y.js (Pages)  
+- **CI/CD & Hosting:** Vercel / Firebase Hosting  
+- **Security:** Firestore Security Rules بناءً على الأدوار والانتماءات
+
+---
+
+## 7. خارطة الطريق (Roadmap)
+
+| المرحلة       | المحتوى                                    | مدّة تقريبية      |
+|---------------|--------------------------------------------|-------------------|
+| **A**         | Auth + Employee Dashboard basic            | 1–2 أسابيع        |
+| **B**         | Tasks & Timer + Reports + Attendance       | 2–3 أسابيع        |
+| **C**         | Pages Editor + File Center + Chat          | 3–4 أسابيع        |
+| **D**         | Client Portal + AI Insights + Customization | 2–3 أسابيع        |
+| **E**         | Testing + QA + Deployment                  | 1–2 أسابيع        |
+
+---
+
+## 8. القيمة المضافة (Key Benefits)
+
+- **توفير وقت**: دمج كل الأدوات في منصة واحدة.  
+- **رصد دقيق**: مؤشرات أداء وتحليلات ذكية.  
+- **إنتاجية أعلى**: مؤقتات وتركيز أفضل للموظفين.  
+- **تجربة عملاء محسنة**: بوابة Feedback مخصصة.  
+- **قابلية توسّع**: إضافة ميزات AI واستراتيجيات نمو بسهولة.
+
+---
+
+### جاهزة للعرض على “lovable”!  
+لو محتاجة أي توضيح أو إضافة قبل التقديم، قولّي وأنا أعدل عليه.  
+
+
+# Workit.OS – 
+
+## 1. User Roles & Permissions
+
+### Team Leader
+- Full access to everything
+- Can view all tasks, deadlines, and team progress
+
+### Supervisor
+- Views attendance of the team
+- Access to team members' reports
+- Manages team tasks
+- Monthly evaluations
+- Can create pages for their team only
+
+### Employee
+- Can check in/out attendance
+- Access to personal tasks only
+- Submit daily reports
+- Modify only their assigned pages
+
+### HR (Life Coach Role)
+- Observes team performance and attendance
+- Gives behavioral feedback and follows up
+
+### Client
+- Can view project progress and updates
+- Can leave comments
+- Projects are linked to clients for visibility
+
+---
+
+## 2. Page & Block Structure
+
+- Like Notion exactly, with permissions per page
+- Tiptap used as the content block editor
+- Types of pages: free, linked to task/project/report, linked to client
+- Types of blocks: text, heading, to-do, file, image, embed, table, calendar, Kanban, AI summary, GPT plugin, timer, chart, vote, comment, sub-pages
+
+---
+
+## 3. Notifications
+
+- Real-time notifications
+- Configurable preferences
+- Displayed in-app and sent via email (WhatsApp later)
+
+---
+
+## 4. Onboarding & Workspace
+
+- Users choose their role
+- Join or create workspace (like Discord)
+- Workspaces are customizable
+- Dark mode & responsive
+- Language detection based on system
+- Multilingual support (English, Arabic)
+
+---
+
+## 5. Navigation & Layout
+
+- Collapsible sidebar with icons
+- Breadcrumb trail
+- Floating timer bar
+- Pages grouped under Teams or Projects
+
+---
+
+## 6. Task & Timer System
+
+- Employees see tasks assigned or self-created
+- Can set countdown (e.g., 3 hrs)
+- Break reminders at intervals
+- Timer is floating and persistent across app
+
+---
+
+## 7. Reports & AI
+
+- Daily/weekly/monthly reports
+- Sent to supervisors/team leaders
+- Data feeds into AI layer for insights & decisions
+- Reports may influence evaluations
+
+---
+
+## 8. Files & Uploads
+
+- Central file center
+- File preview (PDF, image, video)
+- Access control per file
+- Filters by date, type, project
+- Linkable to tasks/pages/reports
+
+---
+
+## 9. Chat & Collaboration
+
+- Internal chat system per workspace
+- Role-based access
+- Discussion threads per page/task
+
+---
+
+## 10. Remaining UI Sections
+
+- Hero: Complete
+- Features: Complete
+- How it Works: In progress (3 steps with icons and animation)
+- Preview/Demo
+- CTA section
+- Footer
+- Design: glassmorphism, mobile-first, inspired by Notion & Linear
+
+---
+# ✅ Workit.OS – Dashboard Summary
+
+## 🎯 Roles & Dashboard Customization
+
+- Each role has a dedicated, role-specific dashboard.
+- Components shown depend on permissions and responsibilities.
+- In future versions: customizable widgets (drag & drop, hide/show).
+
+---
+
+## 👤 Team Leader Dashboard
+
+- View all team members' tasks.
+- See task statuses (In Progress, Done...).
+- Receive daily/weekly reports from team members.
+- Monitor attendance for the whole team.
+- Track team performance over time (graphs or stats).
+- Summary notifications of team activity.
+
+---
+
+## 👨‍💻 Employee Dashboard
+
+- List of personal tasks only.
+- Floating countdown timer (remains active across pages).
+- "Start Task" button to trigger the timer.
+- Auto-break notifications after set periods.
+- Daily report page.
+- Personal notifications (feedback, evaluations...).
+
+---
+
+## 🧑‍⚖️ Supervisor Dashboard
+
+- Track attendance across their team.
+- View all team members' reports.
+- Monitor current tasks by member.
+- Access monthly evaluations.
+- Create internal pages for their team only.
+
+---
+
+## 🧑‍💼 HR Dashboard (Life Coach Role)
+
+- Attendance and absence analytics.
+- Performance tracking over time.
+- Ability to add coaching notes.
+- Follow up on multiple teams.
+- Access to team evaluations and performance metrics.
+
+---
+
+## 🧑‍💻 Client Dashboard
+
+- Access their own project(s) only.
+- See project updates and activity logs.
+- Add comments or feedback for any task.
+- Preview shared files (images, PDFs, videos).
+- View upcoming project milestones (timeline view).
+
+---
+
+## 📊 Design Features
+
+- Full **Glassmorphism** user interface.
+- **Mobile-first** responsive layout (scales up for desktop).
+- **Floating timer** visible in all views.
+- Instant notifications with customization (in-app, email, WhatsApp later).
+- Sidebar can be **collapsed** to show icons only.
+- Notifications panel accessible globally.
+- Each file or page linked to the relevant task or project.
+- Future: AI-generated reports and recommendations for admins.
+
+---
+
+## 🧩 Additional Enhancements (You Approved)
+
+- Sidebar: collapsible, with minimal icon-only mode.
+- Notifications Center: global access across roles.
+- Pages/files dynamically linked to relevant projects/tasks.
+- Dashboard feeds future AI analytics for decision-making.
+# Workit.OS – Dashboard Data Models & Data Flow
+
+## 1. Widgets per Role & Data Sources
+
+### 👤 Team Leader
+- **Team Tasks Overview**  
+  Source: `tasks` (filtered by team member IDs)  
+  Notes: Task statuses, delays, completion percentage.
+
+- **Reports Summary**  
+  Source: `dailyReports`, `evaluations`  
+  Notes: Count of reports (daily/weekly), average evaluation score.
+
+- **Attendance Today**  
+  Source: `attendance`  
+  Notes: Presence/late/absent per member for the current day.
+
+- **Team Performance Trend**  
+  Source: Aggregated from `tasks`, `attendance`, `evaluations`  
+  Notes: Composite metrics like completion rate and consistency.
+
+- **Notifications**  
+  Source: `notifications`  
+  Notes: Filtered based on scope and relevance.
+
+### 👨‍💻 Employee
+- **My Tasks**  
+  Source: `tasks` (where `assignedTo = userId`)  
+  Notes: Status, time remaining, timer state.
+
+- **Timer / Time Tracking**  
+  Source: `timers`  
+  Notes: Active countdown, break schedule, total time spent.
+
+- **Daily Report Status**  
+  Source: `dailyReports`  
+  Notes: Submitted or missing, mood, AI summary.
+
+- **Attendance Card**  
+  Source: `attendance`  
+  Notes: Check-in / check-out for today.
+
+- **Personal Notifications**  
+  Source: `notifications`  
+  Notes: User-specific alerts (feedback, overdue tasks, etc.)
+
+### 🧑‍⚖️ Supervisor
+- **Team Attendance**  
+  Source: `attendance` (filtered by their team members)  
+  Notes: Summary counts (present / late / absent).
+
+- **Team Reports**  
+  Source: `dailyReports`  
+  Notes: Pending vs submitted, quality flags.
+
+- **Task Distribution**  
+  Source: `tasks`  
+  Notes: Load balancing, who is overloaded/idle.
+
+- **Monthly Evaluations**  
+  Source: `evaluations`  
+  Notes: Trends per employee.
+
+### 🧑‍💼 HR (Life Coach)
+- **Attendance Analytics**  
+  Source: `attendance`  
+  Notes: Historical trends, late patterns, absence streaks.
+
+- **Engagement Score**  
+  Derived from: `tasks`, `dailyReports`, `attendance`  
+  Notes: Composite scoring combining completion, reporting consistency, and presence.
+
+- **Coaching Notes**  
+  Source: separate `coachNotes` or embedded under user profile  
+  Notes: Qualitative remarks linked to user.
+
+- **Evaluation Summary**  
+  Source: `evaluations`  
+  Notes: Highlight low/high performers.
+
+### 👨‍💻 Client
+- **Project Progress**  
+  Source: `projects` + related `tasks`  
+  Notes: Percentage complete, milestones status.
+
+- **Recent Updates**  
+  Source: Activity log from `tasks`, `pages`, `reports`  
+  Notes: Last N changes.
+
+- **Feedback Panel**  
+  Source: Comments linked to project/pages  
+  Notes: Client inputs.
+
+- **File Previews**  
+  Source: `files` (linked to project)  
+  Notes: Shared assets overview.
+
+---
+
+## 2. Example Firestore Queries
+
+### Fetch tasks assigned to an employee
+```ts
+const tasksSnapshot = await firestore
+  .collection("tasks")
+  .where("assignedTo", "==", userId)
+  .where("status", "in", ["todo", "in_progress"])
+  .get();
+3. Composite Metrics (Derived)
+Completion Rate = completed tasks / assigned tasks (over a period)
+
+Consistency Score = ratio of days with on-time check-in to expected working days
+
+Engagement Score = weighted combination of task activity, report submissions, and attendance
+
+Stress Flag = triggered when negative mood reports or absence patterns appear consecutively
+
+4. Permissions Layer (Access Logic)
+Employee: Access only their own tasks, reports, attendance, notifications.
+
+Supervisor: Access team members' attendance, reports, and task distribution (based on their assigned team).
+
+Team Leader: Broader visibility across their teams, including all tasks/reports/evaluations.
+
+HR: Access aggregated analytics, coaching notes, and evaluations across teams.
+
+Client: Access limited to their linked projects, related updates, and permitted shared pages/files.
+
+Enforce via Firestore Security Rules or backend middleware verifying user role and ownership.
+
+6. Next Steps
+Define Firestore Security Rules per role
+
+Build reusable React hooks: useEmployeeDashboard, useTeamLeaderOverview, etc.
+
+Design and implement individual dashboard components (cards/widgets)
+
+Integrate AI layer for insights and recommendations based on aggregated data
+
+
+
+
+# 📚 Workit.OS – Database Structure
+
+## 🧑‍💼 User
+- `id`
+- `name`
+- `email`
+- `password` (if not using OAuth)
+- `role` (`admin`, `team_leader`, `supervisor`, `employee`, `hr`, `client`)
+- `teamId` (nullable)
+- `language`
+- `isActive`
+- `checkInTime`
+- `checkOutTime`
+- `createdAt`, `updatedAt`
+
+---
+
+## 🧑‍🤝‍🧑 Team
+- `id`
+- `name`
+- `description`
+- `createdBy` (userId)
+- `workspaceId`
+- `createdAt`, `updatedAt`
+
+---
+
+## 🏢 Workspace
+- `id`
+- `name`
+- `slug`
+- `logoURL`
+- `createdBy`
+- `createdAt`, `updatedAt`
+
+---
+
+## 📄 Page
+- `id`
+- `title`
+- `content` (JSON or Tiptap format)
+- `workspaceId`
+- `teamId` (nullable)
+- `createdBy`
+- `visibility`: `private`, `team`, `public`
+- `editors`: array of userIds
+- `createdAt`, `updatedAt`
+
+---
+
+## 🧱 Block
+- `id`
+- `pageId`
+- `type`: `text`, `todo`, `file`, `image`, `embed`, `heading`, etc.
+- `content`: JSON or text
+- `position`
+- `createdBy`
+- `createdAt`, `updatedAt`
+
+---
+
+## ✅ Task
+- `id`
+- `title`
+- `description`
+- `assignedTo`
+- `assignedBy`
+- `projectId` (nullable)
+- `status`: `todo`, `in_progress`, `done`
+- `dueDate`
+- `durationMinutes`
+- `startTime`
+- `endTime`
+- `reminderBreakEvery` (minutes)
+- `createdAt`, `updatedAt`
+
+---
+
+## 📅 Attendance
+- `id`
+- `userId`
+- `date`
+- `checkIn`
+- `checkOut`
+- `status`: `present`, `late`, `absent`
+- `notes`
+- `createdAt`, `updatedAt`
+
+---
+
+## 📝 DailyReport
+- `id`
+- `userId`
+- `date`
+- `content`
+- `mood`
+- `summary` (AI-generated)
+- `createdAt`
+
+---
+
+## 🧠 Evaluation
+- `id`
+- `userId`
+- `month`
+- `score`
+- `generatedByAi` (true/false)
+- `notes`
+
+---
+
+## 🗂️ File
+- `id`
+- `fileUrl`
+- `fileType`
+- `uploadedBy`
+- `linkedTo`: taskId | reportId | pageId
+- `visibility`: `private`, `team`, `workspace`
+- `createdAt`
+
+---
+
+## 💬 Message
+- `id`
+- `senderId`
+- `receiverId` or `channelId`
+- `content`
+- `type`: `text`, `image`, `file`
+- `createdAt`
+
+---
+
+## 👤 Client
+- `id`
+- `name`
+- `email`
+- `linkedProjects`
+- `canViewPages`
+- `canComment`
+- `createdAt`
+
+---
+
+## 📦 Project
+- `id`
+- `name`
+- `clientId`
+- `teamId`
+- `status`
+- `startDate`, `endDate`
+- `pages`, `tasks`, `files`, `timeline`
