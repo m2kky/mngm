@@ -44,6 +44,7 @@ const BLOCK_TYPES = [
   { type: "heading1",      label: "Heading 1",      icon: Type },
   { type: "heading2",      label: "Heading 2",      icon: Type },
   { type: "heading3",      label: "Heading 3",      icon: Type },
+  { type: "heading",       label: "Heading (legacy)", icon: Type },
   { type: "bullet_list",   label: "Bullet List",    icon: List },
   { type: "numbered_list", label: "Numbered List",  icon: ListOrdered },
   { type: "todo",          label: "To-do List",     icon: CheckSquare },
@@ -105,10 +106,14 @@ export function BlockEditor({ block, onUpdate, onDelete }: BlockEditorProps) {
   };
 
   const copyCode = async () => {
-    await navigator.clipboard.writeText(block.content);
-    setCodeCopied(true);
-    toast({ title: "Code copied to clipboard" });
-    setTimeout(() => setCodeCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(block.content);
+      setCodeCopied(true);
+      toast({ title: "Code copied to clipboard" });
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      toast({ title: "Could not copy — clipboard access denied", variant: "destructive" });
+    }
   };
 
   const renderBlockContent = () => {
