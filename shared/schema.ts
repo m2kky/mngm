@@ -855,6 +855,26 @@ export const taskTemplateProperties = pgTable("task_template_properties", {
   index("task_template_properties_property_id_idx").on(t.propertyId),
 ]);
 
+// ─── Attendance ───────────────────────────────────────────────────────────────
+
+export const attendanceRecords = pgTable("attendance_records", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  checkInAt: timestamp("check_in_at", { withTimezone: true }),
+  checkOutAt: timestamp("check_out_at", { withTimezone: true }),
+  totalMinutes: integer("total_minutes"),
+  status: text("status").notNull().default("present"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("attendance_records_user_date_idx").on(t.userId, t.date),
+  index("attendance_records_agency_id_idx").on(t.agencyId),
+  index("attendance_records_date_idx").on(t.date),
+]);
+
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
 export const chatChannels = pgTable("chat_channels", {
@@ -929,6 +949,7 @@ export const insertProjectTemplateStageSchema = createInsertSchema(projectTempla
 export const insertTaskTemplatePropertySchema = createInsertSchema(taskTemplateProperties).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertChatChannelSchema = createInsertSchema(chatChannels).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
+export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true, updatedAt: true });
 
 // ─── TypeScript Select Types ──────────────────────────────────────────────────
 
@@ -1027,6 +1048,8 @@ export type ChatChannel = typeof chatChannels.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatChannel = z.infer<typeof insertChatChannelSchema>;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
+export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
 
 // ─── Enum value types ─────────────────────────────────────────────────────────
 

@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
+import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { storage } from "./storage";
@@ -641,6 +644,161 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(invitation);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── Attendance ──────────────────────────────────────────────────────────────
+
+  app.get("/api/attendance", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { userId, startDate, endDate } = req.query;
+      const records = await storage.getAttendanceRecords({
+        agencyId: me.agencyId,
+        userId: userId as string | undefined,
+        startDate: startDate as string | undefined,
+      });
+      res.json(records);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/attendance/check-in", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const today = new Date().toISOString().slice(0, 10);
+      const existing = await storage.getAttendanceRecord(me.id, today);
+      if (existing?.checkInAt) return res.status(400).json({ error: "Already checked in today" });
+      const record = await storage.upsertAttendanceRecord({
+        userId: me.id,
+        agencyId: me.agencyId,
+        date: today,
+        checkInAt: new Date(),
+        checkOutAt: null,
+        totalMinutes: null,
+        status: "present",
+        notes: req.body.notes ?? null,
+      });
+      res.status(201).json(record);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/attendance/check-out", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const today = new Date().toISOString().slice(0, 10);
+      const existing = await storage.getAttendanceRecord(me.id, today);
+      if (!existing?.checkInAt) return res.status(400).json({ error: "Not checked in today" });
+      if (existing.checkOutAt) return res.status(400).json({ error: "Already checked out" });
+      const now = new Date();
+      const totalMinutes = Math.round((now.getTime() - existing.checkInAt.getTime()) / 60000);
+      const record = await storage.upsertAttendanceRecord({
+        userId: me.id,
+        agencyId: me.agencyId,
+        date: today,
+        checkInAt: existing.checkInAt,
+        checkOutAt: now,
+        totalMinutes,
+        status: totalMinutes < 240 ? "half_day" : "present",
+        notes: existing.notes,
+      });
+      res.json(record);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── File Upload ──────────────────────────────────────────────────────────────
+
+  app.post("/api/files/upload", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { fileName, mimeType, fileSize, content, projectId, taskId, clientId, folder } = req.body;
+      if (!content || !fileName) return res.status(400).json({ error: "fileName and content are required" });
+      const fileKey = `${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+      const uploadsDir = path.join(process.cwd(), "uploads");
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      const base64Data = content.replace(/^data:[^;]+;base64,/, "");
+      fs.writeFileSync(path.join(uploadsDir, fileKey), Buffer.from(base64Data, "base64"));
+      const fileUrl = `/uploads/${fileKey}`;
+      const file = await storage.createFileAsset({
+        agencyId: me.agencyId,
+        uploadedById: me.id,
+        fileName,
+        fileKey,
+        fileUrl,
+        mimeType: mimeType ?? "application/octet-stream",
+        fileSize: fileSize ?? Buffer.byteLength(base64Data, "base64"),
+        context: "GENERAL",
+        projectId: projectId ?? null,
+        taskId: taskId ?? null,
+        clientId: clientId ?? null,
+        folder: folder ?? null,
+      });
+      res.status(201).json(file);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/files/:id", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const files = await storage.getFileAssets({ agencyId: me.agencyId });
+      const file = files.find(f => f.id === req.params.id);
+      if (!file) return res.status(404).json({ error: "File not found" });
+      const filePath = path.join(process.cwd(), "uploads", file.fileKey);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Reports ──────────────────────────────────────────────────────────────────
+
+  app.get("/api/reports/overview", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const [allTasks, allProjects, allClients, allUsers, allTimeEntries, attendance] = await Promise.all([
+        storage.getTasks({ agencyId: me.agencyId }),
+        storage.getProjects({ agencyId: me.agencyId }),
+        storage.getClients({ agencyId: me.agencyId }),
+        storage.getAgencyUsers(me.agencyId),
+        storage.getTimeEntries({ agencyId: me.agencyId }),
+        storage.getAttendanceRecords({ agencyId: me.agencyId }),
+      ]);
+      const totalMinutes = allTimeEntries.reduce((sum, e) => sum + (e.durationMinutes ?? 0), 0);
+      const tasksByStatus: Record<string, number> = {};
+      allTasks.forEach((t: any) => {
+        const s = t.status ?? "TODO";
+        tasksByStatus[s] = (tasksByStatus[s] ?? 0) + 1;
+      });
+      const today = new Date().toISOString().slice(0, 10);
+      const presentToday = attendance.filter(r => r.date === today && r.checkInAt).length;
+      res.json({
+        totalTasks: allTasks.length,
+        completedTasks: allTasks.filter(t => t.completedAt).length,
+        overdueTasks: allTasks.filter(t => t.dueDate && !t.completedAt && new Date(t.dueDate) < new Date()).length,
+        activeProjects: allProjects.filter((p: any) => p.status === "ACTIVE").length,
+        totalProjects: allProjects.length,
+        totalClients: allClients.length,
+        teamSize: allUsers.length,
+        totalHoursLogged: Math.round(totalMinutes / 60),
+        presentToday,
+        tasksByStatus,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

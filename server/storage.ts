@@ -4,7 +4,7 @@ import { db } from "./db";
 import {
   users, agencies, clients, projects, projectStages, tasks,
   timeEntries, taskComments, fileAssets, notifications, invitations,
-  chatChannels, chatMessages,
+  chatChannels, chatMessages, attendanceRecords,
 } from "@shared/schema";
 import {
   User, InsertUser,
@@ -22,6 +22,7 @@ import {
   ProjectStage, InsertProjectStage,
   ChatChannel, InsertChatChannel,
   ChatMessage, InsertChatMessage,
+  AttendanceRecord, InsertAttendanceRecord,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -85,6 +86,11 @@ export interface IStorage {
 
   // Dashboard methods
   getDashboardStats(filters: { agencyId: string; userId?: string }): Promise<any>;
+
+  // Attendance methods
+  getAttendanceRecords(filters: { agencyId?: string; userId?: string; startDate?: string; endDate?: string }): Promise<AttendanceRecord[]>;
+  getAttendanceRecord(userId: string, date: string): Promise<AttendanceRecord | undefined>;
+  upsertAttendanceRecord(record: InsertAttendanceRecord & { id?: string }): Promise<AttendanceRecord>;
 
   // Chat methods
   getChatChannels(agencyId: string): Promise<ChatChannel[]>;
@@ -319,6 +325,38 @@ export class DrizzleStorage implements IStorage {
       totalClients: agencyClients.length,
       activeClients: agencyClients.filter(c => c.status === "ACTIVE").length,
     };
+  }
+
+  // Attendance methods
+  async getAttendanceRecords(filters: { agencyId?: string; userId?: string; startDate?: string; endDate?: string }): Promise<AttendanceRecord[]> {
+    const conditions = [];
+    if (filters.agencyId) conditions.push(eq(attendanceRecords.agencyId, filters.agencyId));
+    if (filters.userId) conditions.push(eq(attendanceRecords.userId, filters.userId));
+    if (filters.startDate) conditions.push(eq(attendanceRecords.date, filters.startDate));
+    return db.select().from(attendanceRecords)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(attendanceRecords.date));
+  }
+
+  async getAttendanceRecord(userId: string, date: string): Promise<AttendanceRecord | undefined> {
+    const [row] = await db.select().from(attendanceRecords)
+      .where(and(eq(attendanceRecords.userId, userId), eq(attendanceRecords.date, date)));
+    return row;
+  }
+
+  async upsertAttendanceRecord(record: InsertAttendanceRecord & { id?: string }): Promise<AttendanceRecord> {
+    const existing = await this.getAttendanceRecord(record.userId, record.date);
+    if (existing) {
+      const [row] = await db.update(attendanceRecords)
+        .set({ ...record, updatedAt: new Date() })
+        .where(eq(attendanceRecords.id, existing.id))
+        .returning();
+      return row;
+    }
+    const [row] = await db.insert(attendanceRecords)
+      .values({ ...record, id: record.id ?? randomUUID(), createdAt: new Date(), updatedAt: new Date() })
+      .returning();
+    return row;
   }
 
   // Chat methods
