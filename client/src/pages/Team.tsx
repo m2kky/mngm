@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { PageShell } from "@/components/layout/PageShell";
+import { useDetailPanel } from "@/components/detail/DetailPanel";
 import { cn } from "@/lib/utils";
 
 interface Member {
@@ -95,6 +96,7 @@ export default function Team() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const { open: openDetail } = useDetailPanel();
 
   // QuickCreate / palette deep-link: /team#invite opens the invite dialog.
   useEffect(() => {
@@ -349,7 +351,12 @@ export default function Team() {
                       {filteredMembers.map((member) => (
                         <TableRow key={member.id} className={cn(member.status === "DEACTIVATED" && "opacity-60")}>
                           <TableCell>
-                            <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => openDetail("member", member.id)}
+                              data-testid={`member-row-${member.id}`}
+                              className="flex items-center gap-3 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                            >
                               <Avatar className="w-8 h-8">
                                 <AvatarImage src={member.image ?? undefined} />
                                 <AvatarFallback className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs">
@@ -365,7 +372,7 @@ export default function Team() {
                                 </p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">{member.email}</p>
                               </div>
-                            </div>
+                            </button>
                           </TableCell>
                           <TableCell>
                             {isAdmin && member.role !== "OWNER" && member.id !== userProfile?.id ? (

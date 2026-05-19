@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/layout/PageShell";
+import { useDetailPanel } from "@/components/detail/DetailPanel";
 import { Upload, File, FileImage, FileText, FileArchive, Trash2, Download, FolderOpen, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,15 @@ export default function Files() {
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const { open: openDetail } = useDetailPanel();
+
+  // QuickCreate / palette deep-link: /files#upload opens the file picker.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#upload") return;
+    fileInputRef.current?.click();
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
 
   const { data: files = [], isLoading } = useQuery<FileAsset[]>({
     queryKey: ["/api/files"],
@@ -181,9 +191,14 @@ export default function Files() {
           </div>
 
           {filtered.map(file => (
-            <Card key={file.id} className="hover:shadow-sm transition-shadow">
-              <CardContent className="py-3 px-4">
-                <div className="flex items-center gap-4">
+            <Card
+              key={file.id}
+              className="hover:shadow-sm transition-shadow cursor-pointer"
+              onClick={() => openDetail("file", file.id)}
+              data-testid={`file-row-${file.id}`}
+            >
+              <CardContent className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-4" onClick={() => openDetail("file", file.id)}>
                   <FileIcon mimeType={file.mimeType} className="h-5 w-5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{file.fileName}</p>
@@ -191,7 +206,7 @@ export default function Files() {
                   </div>
                   <span className="hidden sm:block text-sm text-muted-foreground w-16 flex-shrink-0">{formatBytes(file.fileSize)}</span>
                   <span className="hidden sm:block text-sm text-muted-foreground w-24 flex-shrink-0">{formatDate(file.createdAt)}</span>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="ghost"
                       size="icon"

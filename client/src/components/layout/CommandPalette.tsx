@@ -102,13 +102,15 @@ const NAV_ITEMS = [
 ];
 
 type QuickCreateAction = "task" | "page" | "invite";
+type DetailKind = "task" | "page" | "file" | "member" | "channel";
 
 type ProviderProps = {
   children: React.ReactNode;
   onQuickCreate?: (kind: QuickCreateAction) => void;
+  onOpenDetail?: (kind: DetailKind, id: string) => void;
 };
 
-export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProps) {
+export function CommandPaletteProvider({ children, onQuickCreate, onOpenDetail }: ProviderProps) {
   const [, navigate] = useLocation();
   const { logout, userProfile } = useAuth();
   const { theme, setTheme, language, setLanguage } = useTheme();
@@ -202,6 +204,14 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
   const go = (path: string, label: string, kind: string, id?: string) => {
     saveRecent({ id: id ?? path, label, path, kind });
     navigate(path);
+    setOpen(false);
+  };
+
+  // Open an entity in the universal slide-over detail panel, recording it
+  // in recents and closing the palette. Path is recorded for recents only.
+  const openEntity = (kind: DetailKind, id: string, label: string, recentPath: string) => {
+    saveRecent({ id, label, path: recentPath, kind });
+    onOpenDetail?.(kind, id);
     setOpen(false);
   };
 
@@ -342,7 +352,7 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
                     <CommandItem
                       key={`task-${t.id}`}
                       value={`task ${t.title} ${t.id}`}
-                      onSelect={() => go(`/tasks?project=${t.projectId}`, t.title, "task", t.id)}
+                      onSelect={() => openEntity("task", t.id, t.title, `/tasks?project=${t.projectId}`)}
                     >
                       <CheckSquare />
                       <span className="truncate">{t.title}</span>
@@ -356,7 +366,7 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
                     <CommandItem
                       key={`page-${p.id}`}
                       value={`page ${p.title} ${p.id}`}
-                      onSelect={() => go(`/pages?id=${p.id}`, p.title, "page", p.id)}
+                      onSelect={() => openEntity("page", p.id, p.title || "Untitled", `/pages?id=${p.id}`)}
                     >
                       {p.isFolder ? <Folder /> : <FileText />}
                       <span className="truncate">{p.title || "Untitled"}</span>
@@ -370,11 +380,7 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
                     <CommandItem
                       key={`file-${f.id}`}
                       value={`file ${f.fileName} ${f.id}`}
-                      onSelect={() => {
-                        saveRecent({ id: f.id, label: f.fileName, path: "/files", kind: "file" });
-                        window.open(f.fileUrl, "_blank");
-                        setOpen(false);
-                      }}
+                      onSelect={() => openEntity("file", f.id, f.fileName, "/files")}
                     >
                       <FileIcon />
                       <span className="truncate">{f.fileName}</span>
@@ -388,7 +394,7 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
                     <CommandItem
                       key={`channel-${c.id}`}
                       value={`channel ${c.name} ${c.id}`}
-                      onSelect={() => go(`/chat?channel=${c.id}`, `#${c.name}`, "channel", c.id)}
+                      onSelect={() => openEntity("channel", c.id, `#${c.name}`, "/chat")}
                     >
                       <Hash />
                       <span className="truncate">{c.name}</span>
@@ -402,9 +408,7 @@ export function CommandPaletteProvider({ children, onQuickCreate }: ProviderProp
                     <CommandItem
                       key={`user-${u.id}`}
                       value={`user ${u.name ?? ""} ${u.email} ${u.id}`}
-                      onSelect={() =>
-                        go("/team", u.name ?? u.email, "user", u.id)
-                      }
+                      onSelect={() => openEntity("member", u.id, u.name ?? u.email, "/team")}
                     >
                       <UserIcon />
                       <span className="truncate">{u.name ?? u.email}</span>

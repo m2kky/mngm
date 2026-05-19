@@ -12,6 +12,7 @@ import { ShortcutsProvider } from "@/lib/shortcuts";
 import { CommandPaletteProvider } from "@/components/layout/CommandPalette";
 import { QuickCreateProvider, useQuickCreate } from "@/components/layout/QuickCreate";
 import { ShortcutsHelp } from "@/components/layout/ShortcutsHelp";
+import { DetailPanelProvider, useDetailPanel } from "@/components/detail/DetailPanel";
 
 import Dashboard from "@/pages/Dashboard";
 import Login from "@/pages/Login";
@@ -136,11 +137,12 @@ function Router() {
 }
 
 function PaletteShellBridge({ children }: { children: React.ReactNode }) {
-  // Inside QuickCreateProvider, we wire the palette's quick-create callback to
-  // the same triggers exposed elsewhere in the app.
+  // Inside QuickCreateProvider + DetailPanelProvider, we wire the palette's
+  // callbacks to the same triggers exposed elsewhere in the app.
   const { trigger } = useQuickCreate();
+  const { open: openDetail } = useDetailPanel();
   return (
-    <CommandPaletteProvider onQuickCreate={trigger}>
+    <CommandPaletteProvider onQuickCreate={trigger} onOpenDetail={openDetail}>
       <ShortcutsHelp />
       {children}
     </CommandPaletteProvider>
@@ -156,10 +158,12 @@ function App() {
             <SidebarUIProvider>
               <ShortcutsProvider>
                 <QuickCreateProvider>
-                  <PaletteShellBridge>
-                    <Toaster />
-                    <Router />
-                  </PaletteShellBridge>
+                  <DetailPanelProvider>
+                    <PaletteShellBridge>
+                      <Toaster />
+                      <Router />
+                    </PaletteShellBridge>
+                  </DetailPanelProvider>
                 </QuickCreateProvider>
               </ShortcutsProvider>
             </SidebarUIProvider>

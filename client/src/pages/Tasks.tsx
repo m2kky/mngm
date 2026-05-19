@@ -50,6 +50,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/layout/PageShell";
+import { useDetailPanel } from "@/components/detail/DetailPanel";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -333,147 +334,9 @@ function CreateTaskModal({
   );
 }
 
-// ─── Edit task modal ──────────────────────────────────────────────────────────
-
-function EditTaskModal({
-  task, open, onClose, projectId, stages, agencyMembers, currentAssigneeId,
-}: {
-  task: Task; open: boolean; onClose: () => void;
-  projectId: string; stages: ProjectStage[];
-  agencyMembers: Pick<User, "id" | "name" | "email">[];
-  currentAssigneeId: string | null;
-}) {
-  const { toast } = useToast();
-  const dueDateStr = task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : "";
-
-  const form = useForm<TaskFormValues>({
-    resolver: zodResolver(taskFormSchema),
-    defaultValues: {
-      title:       task.title,
-      description: task.description ?? "",
-      type:        (task.type as typeof TASK_TYPES[number]) ?? "DESIGN",
-      priority:    (task.priority as typeof PRIORITIES[number]) ?? "MEDIUM",
-      dueDate:     dueDateStr,
-      assigneeId:  currentAssigneeId ?? "",
-    },
-  });
-
-  // Keep assigneeId in sync if parent data changes while modal is open
-  useEffect(() => {
-    form.setValue("assigneeId", currentAssigneeId ?? "");
-  }, [currentAssigneeId]);
-
-  const updateMutation = useMutation({
-    mutationFn: async (values: TaskFormValues) => {
-      const body: Record<string, unknown> = {
-        title:    values.title,
-        type:     values.type,
-        priority: values.priority,
-      };
-      if (values.description !== undefined) body.description = values.description || null;
-      if (values.dueDate) body.dueDate = new Date(values.dueDate).toISOString();
-      else                body.dueDate = null;
-
-      const res = await apiRequest("PUT", `/api/tasks/${task.id}`, body);
-
-      const prevAssigneeId = currentAssigneeId;
-      const newAssigneeId  = values.assigneeId || null;
-
-      if (prevAssigneeId && prevAssigneeId !== newAssigneeId) {
-        await apiRequest("DELETE", `/api/tasks/${task.id}/assignees/${prevAssigneeId}`);
-      }
-      if (newAssigneeId && newAssigneeId !== prevAssigneeId) {
-        await apiRequest("POST", `/api/tasks/${task.id}/assignees`, { userId: newAssigneeId });
-      }
-
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/task-assignees`] });
-      toast({ title: "Task updated" });
-      onClose();
-    },
-    onError: (e: Error) => {
-      toast({ title: "Failed to update task", description: e.message, variant: "destructive" });
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Edit task</DialogTitle></DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => updateMutation.mutate(v))} className="space-y-4">
-            <FormField control={form.control} name="title" render={({ field }) => (
-              <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="Task title…" {...field} /></FormControl></FormItem>
-            )} />
-            <FormField control={form.control} name="description" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Description <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
-                <FormControl><Textarea placeholder="Add more context…" rows={3} {...field} /></FormControl>
-              </FormItem>
-            )} />
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={form.control} name="type" render={({ field }) => (
-                <FormItem><FormLabel>Type</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>{TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="priority" render={({ field }) => (
-                <FormItem><FormLabel>Priority</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={form.control} name="assigneeId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Assign to <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
-                  <Select value={field.value ?? "NONE"} onValueChange={(v) => field.onChange(v === "NONE" ? "" : v)}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="NONE">Unassigned</SelectItem>
-                      {agencyMembers.map((u) => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="dueDate" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Due date <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
-                  <FormControl><Input type="date" {...field} /></FormControl>
-                </FormItem>
-              )} />
-            </div>
-            <FormItem>
-              <FormLabel>Stage</FormLabel>
-              <Select disabled value={task.stageId ?? stages[0]?.id ?? ""}>
-                <SelectTrigger>
-                  <SelectValue>{stages.find((s) => s.id === (task.stageId ?? stages[0]?.id))?.name ?? ""}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>{stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </FormItem>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Save
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// ─── Edit task modal — retired ──────────────────────────────────────────────
+// Task editing now happens inline in the TaskDetailPanel slide-over
+// (see `client/src/components/detail/DetailPanel.tsx`).
 
 // ─── TaskCard ────────────────────────────────────────────────────────────────
 
@@ -910,8 +773,8 @@ export default function Tasks() {
   const [filterAssignee,     setFilterAssignee]     = useState<string>("ALL");
   const [activeId,           setActiveId]           = useState<string | null>(null);
   const [createModal,        setCreateModal]        = useState<{ open: boolean; stageId: string }>({ open: false, stageId: "" });
-  const [editTask,           setEditTask]           = useState<Task | null>(null);
   const [createProjectOpen,  setCreateProjectOpen]  = useState(false);
+  const { open: openDetail } = useDetailPanel();
   const [createStageOpen,    setCreateStageOpen]    = useState(false);
 
   const sensors = useSensors(
@@ -1174,7 +1037,7 @@ export default function Tasks() {
                   activeId={activeId}
                   onAddTask={(stageId) => setCreateModal({ open: true, stageId })}
                   taskAssigneeMap={taskAssigneeMap}
-                  onEdit={setEditTask}
+                  onEdit={(t) => openDetail("task", t.id)}
                 />
               ))}
             </div>
@@ -1239,18 +1102,6 @@ export default function Tasks() {
         />
       )}
 
-      {/* ── Edit task modal ── */}
-      {editTask && (
-        <EditTaskModal
-          task={editTask}
-          open={!!editTask}
-          onClose={() => setEditTask(null)}
-          projectId={effectiveProjectId}
-          stages={stages}
-          agencyMembers={agencyMembers}
-          currentAssigneeId={taskAssigneeMap[editTask.id]?.[0]?.userId ?? null}
-        />
-      )}
     </div>
     </PageShell>
   );

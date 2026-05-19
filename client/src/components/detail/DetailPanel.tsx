@@ -1,0 +1,867 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef } from "react";
+import { useLocation, useSearch } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
+import {
+  CheckSquare, FileText, FolderOpen, User as UserIcon, Hash,
+  Download, ExternalLink, Trash2, Send, Loader2, Calendar, Flag, Tag,
+  MessageSquare, Activity, Paperclip, Info,
+} from "lucide-react";
+
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
+
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import type { Task, Page, User, TaskComment } from "@shared/schema";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export type DetailKind = "task" | "page" | "file" | "member" | "channel";
+
+const PARAM_FOR: Record<DetailKind, string> = {
+  task: "task",
+  page: "page",
+  file: "file",
+  member: "member",
+  channel: "channel",
+};
+
+const ALL_KINDS: DetailKind[] = ["task", "page", "file", "member", "channel"];
+const STACK_PARAM = "detail";
+
+interface DetailEntry {
+  kind: DetailKind;
+  id: string;
+}
+
+interface DetailContextValue {
+  open: (kind: DetailKind, id: string) => void;
+  close: (entry?: DetailEntry) => void;
+  closeAll: () => void;
+  stack: DetailEntry[];
+}
+
+const DetailPanelContext = createContext<DetailContextValue | null>(null);
+
+export function useDetailPanel() {
+  const ctx = useContext(DetailPanelContext);
+  if (!ctx) throw new Error("useDetailPanel must be used within DetailPanelProvider");
+  return ctx;
+}
+
+// ─── Provider — URL is the source of truth ──────────────────────────────────
+//
+// Stack encoding: `?detail=task:abc,page:xyz,task:def` preserves push-order
+// and allows multiple entries of the same kind. For shareable single-entity
+// deep links we *also* accept shorthand: `?task=abc`, `?page=xyz`, etc.
+// On any state change we normalise to the canonical `detail=` form.
+
+function encodeStack(entries: DetailEntry[]): string {
+  return entries.map((e) => `${e.kind}:${e.id}`).join(",");
+}
+
+function decodeStack(raw: string | null): DetailEntry[] {
+  if (!raw) return [];
+  const out: DetailEntry[] = [];
+  for (const piece of raw.split(",")) {
+    const ix = piece.indexOf(":");
+    if (ix <= 0) continue;
+    const kind = piece.slice(0, ix);
+    const id = piece.slice(ix + 1);
+    if (id && (ALL_KINDS as string[]).includes(kind)) {
+      out.push({ kind: kind as DetailKind, id });
+    }
+  }
+  return out;
+}
+
+export function DetailPanelProvider({ children }: { children: React.ReactNode }) {
+  const [location, navigate] = useLocation();
+  const search = useSearch();
+
+  const stack = useMemo<DetailEntry[]>(() => {
+    const params = new URLSearchParams(search);
+    const fromStack = decodeStack(params.get(STACK_PARAM));
+    if (fromStack.length > 0) return fromStack;
+    // Fallback: shorthand single-entity deep links.
+    const shorthand: DetailEntry[] = [];
+    for (const kind of ALL_KINDS) {
+      const id = params.get(PARAM_FOR[kind]);
+      if (id) shorthand.push({ kind, id });
+    }
+    return shorthand;
+  }, [search]);
+
+  const writeStack = useCallback(
+    (next: DetailEntry[]) => {
+      const params = new URLSearchParams(search);
+      // Drop any shorthand params — we always canonicalise to `detail=`.
+      for (const k of ALL_KINDS) params.delete(PARAM_FOR[k]);
+      params.delete(STACK_PARAM);
+      if (next.length > 0) params.set(STACK_PARAM, encodeStack(next));
+      const qs = params.toString();
+      navigate(qs ? `${location}?${qs}` : location, { replace: false });
+    },
+    [search, navigate, location],
+  );
+
+  const open = useCallback(
+    (kind: DetailKind, id: string) => {
+      const top = stack[stack.length - 1];
+      if (top && top.kind === kind && top.id === id) return; // no-op
+      // Remove any earlier identical entry so we never loop the stack.
+      const deduped = stack.filter((e) => !(e.kind === kind && e.id === id));
+      writeStack([...deduped, { kind, id }]);
+    },
+    [stack, writeStack],
+  );
+
+  const close = useCallback(
+    (entry?: DetailEntry) => {
+      if (!entry) {
+        // Pop the top.
+        writeStack(stack.slice(0, -1));
+        return;
+      }
+      writeStack(stack.filter((e) => !(e.kind === entry.kind && e.id === entry.id)));
+    },
+    [stack, writeStack],
+  );
+
+  const closeAll = useCallback(() => writeStack([]), [writeStack]);
+
+  const value = useMemo(() => ({ open, close, closeAll, stack }), [open, close, closeAll, stack]);
+
+  return (
+    <DetailPanelContext.Provider value={value}>
+      {children}
+      <DetailPanelHost />
+    </DetailPanelContext.Provider>
+  );
+}
+
+// ─── Host — renders the appropriate panel for each entry in the stack ──────
+
+function DetailPanelHost() {
+  const { stack, close } = useDetailPanel();
+
+  return (
+    <>
+      {stack.map((entry, i) => {
+        const onOpenChange = (v: boolean) => { if (!v) close(entry); };
+        const isTop = i === stack.length - 1;
+        const panel =
+          entry.kind === "task"    ? <TaskDetail    id={entry.id} /> :
+          entry.kind === "page"    ? <PageDetail    id={entry.id} /> :
+          entry.kind === "file"    ? <FileDetail    id={entry.id} /> :
+          entry.kind === "member"  ? <MemberDetail  id={entry.id} /> :
+          entry.kind === "channel" ? <ChannelDetail id={entry.id} /> :
+          null;
+        // Stacked panels: each successive panel is slightly offset for context
+        const offset = (stack.length - 1 - i) * 32;
+        return (
+          <Sheet key={`${entry.kind}:${entry.id}`} open onOpenChange={onOpenChange}>
+            <SheetContent
+              side="right"
+              className="w-full sm:max-w-xl p-0 flex flex-col"
+              style={isTop ? undefined : { transform: `translateX(-${offset}px)`, opacity: 0.6 }}
+            >
+              {panel}
+            </SheetContent>
+          </Sheet>
+        );
+      })}
+    </>
+  );
+}
+
+// ─── Shared bits ────────────────────────────────────────────────────────────
+
+function PanelShell({
+  icon, title, subtitle, badges, footer, children,
+}: {
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  badges?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      <SheetHeader className="border-b px-6 py-4 space-y-2 text-left">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 text-muted-foreground">{icon}</div>
+          <div className="min-w-0 flex-1 pr-8">
+            <SheetTitle className="text-base leading-snug break-words">{title}</SheetTitle>
+            {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
+            {badges && <div className="flex flex-wrap gap-1.5 mt-2">{badges}</div>}
+          </div>
+        </div>
+      </SheetHeader>
+      <div className="flex-1 overflow-hidden">{children}</div>
+      {footer && <div className="border-t px-6 py-3 bg-muted/30">{footer}</div>}
+    </div>
+  );
+}
+
+function initials(name?: string | null, email?: string | null) {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    return parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+      : name.slice(0, 2).toUpperCase();
+  }
+  return (email ?? "?").slice(0, 2).toUpperCase();
+}
+
+function PanelLoading() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
+
+function PanelEmpty({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
+      <Info className="h-5 w-5 mb-2 opacity-50" />
+      {message}
+    </div>
+  );
+}
+
+// ─── Task Detail ────────────────────────────────────────────────────────────
+
+const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+const TASK_TYPES = ["DESIGN", "COPY", "DEVELOPMENT", "SOCIAL_POST", "MEETING", "REVIEW", "STRATEGY", "OTHER"] as const;
+
+const PRIORITY_COLORS: Record<string, string> = {
+  LOW: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  MEDIUM: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  HIGH: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  URGENT: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+};
+
+const taskEditSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+});
+type TaskEditValues = z.infer<typeof taskEditSchema>;
+
+function TaskDetail({ id }: { id: string }) {
+  const { toast } = useToast();
+  const { currentUser } = useAuth();
+  const agencyId = currentUser?.agencyId ?? "";
+
+  const { data: task, isLoading, isError, error } = useQuery<Task>({
+    queryKey: [`/api/tasks/${id}`],
+    retry: false,
+  });
+
+  const { data: assignees = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image">>>({
+    queryKey: [`/api/tasks/${id}/assignees`],
+  });
+
+  const { data: agencyMembers = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image">>>({
+    queryKey: [`/api/agencies/${agencyId}/users`],
+    enabled: !!agencyId,
+  });
+
+  const invalidateTask = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+    if (task?.projectId) {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${task.projectId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${task.projectId}/task-assignees`] });
+    }
+  }, [id, task?.projectId]);
+
+  const updateTask = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiRequest("PUT", `/api/tasks/${id}`, body).then((r) => r.json()),
+    onSuccess: () => invalidateTask(),
+    onError: (e: Error) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
+  });
+
+  const addAssignee = useMutation({
+    mutationFn: (userId: string) => apiRequest("POST", `/api/tasks/${id}/assignees`, { userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/assignees`] });
+      invalidateTask();
+    },
+  });
+  const removeAssignee = useMutation({
+    mutationFn: (userId: string) => apiRequest("DELETE", `/api/tasks/${id}/assignees/${userId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/assignees`] });
+      invalidateTask();
+    },
+  });
+
+  const form = useForm<TaskEditValues>({
+    resolver: zodResolver(taskEditSchema),
+    defaultValues: { title: "", description: "" },
+  });
+
+  // Sync form to fetched task
+  useEffect(() => {
+    if (task) {
+      form.reset({ title: task.title, description: task.description ?? "" });
+    }
+  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveText = useCallback(
+    (field: "title" | "description", value: string) => {
+      if (!task) return;
+      const current = (task[field] ?? "") as string;
+      if (current === value) return;
+      updateTask.mutate({ [field]: value || null });
+    },
+    [task, updateTask],
+  );
+
+  if (isLoading) {
+    return (
+      <PanelShell icon={<CheckSquare className="h-5 w-5" />} title="Loading…">
+        <PanelLoading />
+      </PanelShell>
+    );
+  }
+  if (isError || !task) {
+    return (
+      <PanelShell icon={<CheckSquare className="h-5 w-5" />} title="Task not found">
+        <PanelEmpty
+          message={
+            error instanceof Error
+              ? `We couldn't load this task: ${error.message}`
+              : "This task no longer exists or you don't have access to it."
+          }
+        />
+      </PanelShell>
+    );
+  }
+
+  const currentAssigneeId = assignees[0]?.id ?? "";
+
+  return (
+    <PanelShell
+      icon={<CheckSquare className="h-5 w-5 text-indigo-500" />}
+      title={
+        <Form {...form}>
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
+              <Input
+                {...field}
+                onBlur={() => saveText("title", field.value)}
+                className="border-0 px-0 h-auto py-0 text-base font-semibold shadow-none focus-visible:ring-0"
+                data-testid="input-task-title"
+              />
+            )}
+          />
+        </Form>
+      }
+      badges={
+        <>
+          <Badge variant="secondary" className={PRIORITY_COLORS[task.priority] ?? ""}>
+            <Flag className="w-3 h-3 mr-1" /> {task.priority}
+          </Badge>
+          <Badge variant="outline"><Tag className="w-3 h-3 mr-1" /> {task.type}</Badge>
+          {task.dueDate && (
+            <Badge variant="outline">
+              <Calendar className="w-3 h-3 mr-1" /> {format(new Date(task.dueDate), "MMM d, yyyy")}
+            </Badge>
+          )}
+        </>
+      }
+    >
+      <Tabs defaultValue="details" className="h-full flex flex-col">
+        <TabsList className="mx-6 mt-3 grid grid-cols-4 w-auto">
+          <TabsTrigger value="details"><Info className="h-3.5 w-3.5 mr-1" />Details</TabsTrigger>
+          <TabsTrigger value="activity"><Activity className="h-3.5 w-3.5 mr-1" />Activity</TabsTrigger>
+          <TabsTrigger value="comments"><MessageSquare className="h-3.5 w-3.5 mr-1" />Comments</TabsTrigger>
+          <TabsTrigger value="files"><Paperclip className="h-3.5 w-3.5 mr-1" />Files</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="flex-1 overflow-auto px-6 py-4 mt-0 space-y-5">
+          <Form {...form}>
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Description</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      rows={5}
+                      placeholder="Add more context…"
+                      onBlur={() => saveText("description", field.value ?? "")}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </Form>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Priority</label>
+              <Select value={task.priority} onValueChange={(v) => updateTask.mutate({ priority: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Type</label>
+              <Select value={task.type} onValueChange={(v) => updateTask.mutate({ type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Due date</label>
+              <Input
+                type="date"
+                defaultValue={task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateTask.mutate({ dueDate: v ? new Date(v).toISOString() : null });
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Assignee</label>
+              <Select
+                value={currentAssigneeId || "NONE"}
+                onValueChange={(v) => {
+                  const newId = v === "NONE" ? "" : v;
+                  if (currentAssigneeId && currentAssigneeId !== newId) {
+                    removeAssignee.mutate(currentAssigneeId);
+                  }
+                  if (newId && newId !== currentAssigneeId) {
+                    addAssignee.mutate(newId);
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Unassigned</SelectItem>
+                  {agencyMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name ?? m.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="activity" className="flex-1 overflow-auto px-6 py-4 mt-0">
+          <PanelEmpty message="Activity feed coming soon." />
+        </TabsContent>
+
+        <TabsContent value="comments" className="flex-1 overflow-hidden mt-0 flex flex-col">
+          <TaskComments taskId={id} agencyId={agencyId} />
+        </TabsContent>
+
+        <TabsContent value="files" className="flex-1 overflow-auto px-6 py-4 mt-0">
+          <TaskFiles taskId={id} />
+        </TabsContent>
+      </Tabs>
+    </PanelShell>
+  );
+}
+
+// ─── Task: Comments tab ─────────────────────────────────────────────────────
+
+function TaskComments({ taskId, agencyId }: { taskId: string; agencyId: string }) {
+  const { toast } = useToast();
+  const { currentUser } = useAuth();
+  const [draft, setDraft] = useState("");
+
+  const { data: comments = [], isLoading } = useQuery<TaskComment[]>({
+    queryKey: [`/api/tasks/${taskId}/comments`],
+  });
+
+  const { data: agencyMembers = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image">>>({
+    queryKey: [`/api/agencies/${agencyId}/users`],
+    enabled: !!agencyId,
+  });
+
+  const memberById = useMemo(() => {
+    const map: Record<string, Pick<User, "id" | "name" | "email" | "image">> = {};
+    for (const m of agencyMembers) map[m.id] = m;
+    return map;
+  }, [agencyMembers]);
+
+  const post = useMutation({
+    mutationFn: (content: string) =>
+      apiRequest("POST", `/api/tasks/${taskId}/comments`, { content, agencyId }),
+    onSuccess: () => {
+      setDraft("");
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${taskId}/comments`] });
+    },
+    onError: (e: Error) => toast({ title: "Failed to post comment", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <>
+      <ScrollArea className="flex-1 px-6 py-4">
+        {isLoading ? (
+          <PanelLoading />
+        ) : comments.length === 0 ? (
+          <PanelEmpty message="No comments yet. Start the conversation below." />
+        ) : (
+          <div className="space-y-4">
+            {comments.map((c) => {
+              const author = c.authorUserId ? memberById[c.authorUserId] : null;
+              return (
+                <div key={c.id} className="flex gap-3">
+                  <Avatar className="h-8 w-8">
+                    {author?.image && <AvatarImage src={author.image} />}
+                    <AvatarFallback className="text-xs">{initials(author?.name, author?.email)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-semibold">{author?.name ?? author?.email ?? "Unknown"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(c.createdAt), "MMM d, h:mm a")}
+                      </span>
+                    </div>
+                    <p className="text-sm mt-0.5 whitespace-pre-wrap break-words">{c.content}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ScrollArea>
+      <div className="border-t px-6 py-3 bg-muted/30">
+        <div className="flex items-end gap-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Add a comment…"
+            rows={2}
+            className="resize-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (draft.trim() && currentUser) post.mutate(draft.trim());
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            onClick={() => draft.trim() && currentUser && post.mutate(draft.trim())}
+            disabled={!draft.trim() || post.isPending}
+          >
+            {post.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">⌘/Ctrl + Enter to send</p>
+      </div>
+    </>
+  );
+}
+
+// ─── Task: Files tab ────────────────────────────────────────────────────────
+
+interface FileAsset {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
+function TaskFiles({ taskId }: { taskId: string }) {
+  const { data: files = [], isLoading } = useQuery<FileAsset[]>({
+    queryKey: [`/api/files?taskId=${taskId}`],
+  });
+
+  if (isLoading) return <PanelLoading />;
+  if (files.length === 0) return <PanelEmpty message="No files attached to this task." />;
+
+  return (
+    <div className="space-y-2">
+      {files.map((f) => (
+        <a
+          key={f.id}
+          href={f.fileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-3 rounded-md border p-3 hover:bg-muted/50 transition-colors"
+        >
+          <Paperclip className="h-4 w-4 text-muted-foreground" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{f.fileName}</p>
+            <p className="text-xs text-muted-foreground">{(f.fileSize / 1024).toFixed(1)} KB</p>
+          </div>
+          <Download className="h-4 w-4 text-muted-foreground" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+// ─── Page Detail ────────────────────────────────────────────────────────────
+
+function PageDetail({ id }: { id: string }) {
+  const [, navigate] = useLocation();
+  const { close } = useDetailPanel();
+  const { data: page, isLoading, isError } = useQuery<Page>({
+    queryKey: [`/api/pages/${id}`],
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <PanelShell icon={<FileText className="h-5 w-5" />} title="Loading…">
+        <PanelLoading />
+      </PanelShell>
+    );
+  }
+  if (isError || !page) {
+    return (
+      <PanelShell icon={<FileText className="h-5 w-5" />} title="Page not found">
+        <PanelEmpty message="This page no longer exists or you don't have access to it." />
+      </PanelShell>
+    );
+  }
+
+  const blocks = Array.isArray(page.content) ? (page.content as Array<{ type: string; content: string }>) : [];
+
+  return (
+    <PanelShell
+      icon={<FileText className="h-5 w-5 text-purple-500" />}
+      title={page.title ?? "Untitled"}
+      subtitle={`Updated ${format(new Date(page.updatedAt), "MMM d, yyyy 'at' h:mm a")}`}
+      footer={
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => { close({ kind: "page", id }); navigate("/pages"); }}>
+            <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Open in editor
+          </Button>
+        </div>
+      }
+    >
+      <ScrollArea className="h-full px-6 py-4">
+        {blocks.length === 0 ? (
+          <PanelEmpty message="This page is empty." />
+        ) : (
+          <div className="prose prose-sm dark:prose-invert max-w-none space-y-3">
+            {blocks.map((b, i) => (
+              <p key={i} className="text-sm whitespace-pre-wrap">{b.content || <span className="text-muted-foreground italic">(empty {b.type} block)</span>}</p>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </PanelShell>
+  );
+}
+
+// ─── File Detail ────────────────────────────────────────────────────────────
+
+function FileDetail({ id }: { id: string }) {
+  const { toast } = useToast();
+  const { close } = useDetailPanel();
+
+  const { data: files = [], isLoading } = useQuery<FileAsset[]>({
+    queryKey: ["/api/files"],
+  });
+
+  const file = files.find((f) => f.id === id);
+
+  const del = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/files/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+      toast({ title: "File deleted" });
+      close({ kind: "file", id });
+    },
+    onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return <PanelShell icon={<Paperclip className="h-5 w-5" />} title="Loading…"><PanelLoading /></PanelShell>;
+  }
+  if (!file) {
+    return <PanelShell icon={<Paperclip className="h-5 w-5" />} title="File not found"><PanelEmpty message="This file no longer exists." /></PanelShell>;
+  }
+
+  const isImage = file.mimeType.startsWith("image/");
+
+  return (
+    <PanelShell
+      icon={<Paperclip className="h-5 w-5 text-blue-500" />}
+      title={file.fileName}
+      subtitle={`${(file.fileSize / 1024).toFixed(1)} KB · ${file.mimeType}`}
+      footer={
+        <div className="flex justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => del.mutate()} disabled={del.isPending}>
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete
+          </Button>
+          <Button asChild size="sm">
+            <a href={file.fileUrl} download={file.fileName} target="_blank" rel="noreferrer">
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Download
+            </a>
+          </Button>
+        </div>
+      }
+    >
+      <ScrollArea className="h-full px-6 py-4">
+        {isImage ? (
+          <img src={file.fileUrl} alt={file.fileName} className="w-full rounded-lg border" />
+        ) : (
+          <div className="rounded-lg border p-6 text-center bg-muted/30">
+            <Paperclip className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="text-sm font-medium">{file.fileName}</p>
+            <p className="text-xs text-muted-foreground mt-1">Preview unavailable. Download to view.</p>
+          </div>
+        )}
+        <dl className="mt-6 text-sm space-y-2">
+          <div className="flex justify-between"><dt className="text-muted-foreground">Type</dt><dd>{file.mimeType}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">Size</dt><dd>{(file.fileSize / 1024).toFixed(1)} KB</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">Uploaded</dt><dd>{format(new Date(file.createdAt), "MMM d, yyyy")}</dd></div>
+        </dl>
+      </ScrollArea>
+    </PanelShell>
+  );
+}
+
+// ─── Member Detail ──────────────────────────────────────────────────────────
+
+interface MemberRow {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  status: string;
+  image: string | null;
+  createdAt: string;
+}
+
+function MemberDetail({ id }: { id: string }) {
+  const { currentUser } = useAuth();
+  const agencyId = currentUser?.agencyId ?? "";
+
+  const { data: members = [], isLoading } = useQuery<MemberRow[]>({
+    queryKey: [`/api/agencies/${agencyId}/members`],
+    enabled: !!agencyId,
+    queryFn: async () => {
+      const res = await fetch(`/api/agencies/${agencyId}/members`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("wk_token")}` },
+      });
+      if (!res.ok) throw new Error("Failed to load members");
+      return res.json();
+    },
+  });
+
+  const member = members.find((m) => m.id === id);
+
+  if (isLoading) return <PanelShell icon={<UserIcon className="h-5 w-5" />} title="Loading…"><PanelLoading /></PanelShell>;
+  if (!member) return <PanelShell icon={<UserIcon className="h-5 w-5" />} title="Member not found"><PanelEmpty message="This member is not in your agency." /></PanelShell>;
+
+  return (
+    <PanelShell
+      icon={<UserIcon className="h-5 w-5 text-emerald-500" />}
+      title={member.name ?? member.email}
+      subtitle={member.email}
+      badges={
+        <>
+          <Badge variant="secondary">{member.role}</Badge>
+          <Badge variant={member.status === "ACTIVE" ? "outline" : "destructive"}>{member.status}</Badge>
+        </>
+      }
+    >
+      <div className="px-6 py-6">
+        <div className="flex items-center gap-4 mb-6">
+          <Avatar className="h-16 w-16">
+            {member.image && <AvatarImage src={member.image} />}
+            <AvatarFallback className="text-lg">{initials(member.name, member.email)}</AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="font-semibold">{member.name ?? "—"}</p>
+            <p className="text-sm text-muted-foreground">{member.email}</p>
+          </div>
+        </div>
+        <dl className="text-sm space-y-3">
+          <div className="flex justify-between"><dt className="text-muted-foreground">Role</dt><dd>{member.role}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">Status</dt><dd>{member.status}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">Joined</dt><dd>{format(new Date(member.createdAt), "MMM d, yyyy")}</dd></div>
+        </dl>
+      </div>
+    </PanelShell>
+  );
+}
+
+// ─── Channel Detail ─────────────────────────────────────────────────────────
+
+interface ChannelRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  type: string;
+  createdAt: string;
+}
+
+function ChannelDetail({ id }: { id: string }) {
+  const [, navigate] = useLocation();
+  const { close } = useDetailPanel();
+
+  const { data: channels = [], isLoading } = useQuery<ChannelRow[]>({
+    queryKey: ["/api/chat/channels"],
+  });
+
+  const channel = channels.find((c) => c.id === id);
+
+  if (isLoading) return <PanelShell icon={<Hash className="h-5 w-5" />} title="Loading…"><PanelLoading /></PanelShell>;
+  if (!channel) return <PanelShell icon={<Hash className="h-5 w-5" />} title="Channel not found"><PanelEmpty message="This channel no longer exists." /></PanelShell>;
+
+  return (
+    <PanelShell
+      icon={<Hash className="h-5 w-5 text-pink-500" />}
+      title={`#${channel.name}`}
+      subtitle={channel.description ?? "No description"}
+      footer={
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => { close({ kind: "channel", id }); navigate("/chat"); }}>
+            <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Open chat
+          </Button>
+        </div>
+      }
+    >
+      <div className="px-6 py-6">
+        <dl className="text-sm space-y-3">
+          <div className="flex justify-between"><dt className="text-muted-foreground">Type</dt><dd className="capitalize">{channel.type}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">Created</dt><dd>{format(new Date(channel.createdAt), "MMM d, yyyy")}</dd></div>
+        </dl>
+      </div>
+    </PanelShell>
+  );
+}

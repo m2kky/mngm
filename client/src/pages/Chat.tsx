@@ -82,6 +82,14 @@ export default function Chat() {
     }
   }, [channels, activeChannelId]);
 
+  // QuickCreate / palette deep-link: /chat#new opens the create-channel dialog.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#new") return;
+    setShowNewChannel(true);
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
+
   // ── Fetch messages ──────────────────────────────────────────────────────────
   const { data: messages = [] } = useQuery<Message[]>({
     queryKey: ["/api/chat/channels", activeChannelId, "messages"],
