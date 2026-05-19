@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { 
   Home, 
@@ -45,11 +46,15 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
 
   const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
 
-  const mockTeamMembers = [
-    { id: "1", name: "Sarah Wilson", role: "Designer", avatar: "", online: true },
-    { id: "2", name: "Mike Chen", role: "Developer", avatar: "", online: false },
-    { id: "3", name: "Lisa Park", role: "Manager", avatar: "", online: true },
-  ];
+  const agencyId = userProfile?.agencyId;
+  const { data: teamMembers = [], isLoading: teamLoading } = useQuery<any[]>({
+    queryKey: ["/api/agencies", agencyId, "users"],
+    queryFn: () =>
+      fetch(`/api/agencies/${agencyId}/users`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("wk_token")}` },
+      }).then(r => r.json()),
+    enabled: !!agencyId,
+  });
 
   return (
     <aside
@@ -169,33 +174,66 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
             
             {workspaceExpanded && (
               <div className="space-y-2">
-                {mockTeamMembers.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center space-x-2 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200 cursor-pointer"
-                  >
-                    <Avatar className="w-6 h-6">
-                      <AvatarImage src={member.avatar} />
-                      <AvatarFallback className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs">
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                        {member.name}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {member.role}
-                      </p>
+                {teamLoading && (
+                  <>
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="flex items-center space-x-2 p-2 animate-pulse">
+                        <div className="w-6 h-6 rounded-full bg-white/20" />
+                        <div className="flex-1 space-y-1">
+                          <div className="h-2.5 bg-white/20 rounded w-24" />
+                          <div className="h-2 bg-white/10 rounded w-16" />
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!teamLoading && teamMembers.length === 0 && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">No team members yet</p>
+                )}
+                {!teamLoading && teamMembers.slice(0, 8).map((member) => {
+                  const initials = (member.name ?? member.email ?? "?")
+                    .split(" ")
+                    .map((n: string) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2);
+                  const roleLabel = member.role
+                    ? member.role.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+                    : "";
+                  const isSelf = member.id === userProfile?.id;
+                  return (
+                    <div
+                      key={member.id}
+                      className="flex items-center space-x-2 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200 cursor-pointer"
+                    >
+                      <Avatar className="w-6 h-6">
+                        <AvatarImage src={member.image ?? ""} />
+                        <AvatarFallback className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+                          {member.name ?? member.email}{isSelf ? " (you)" : ""}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {roleLabel}
+                        </p>
+                      </div>
+                      <div className={cn(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        isSelf ? "bg-green-500" : "bg-gray-400"
+                      )} />
                     </div>
-                    <div 
-                      className={cn(
-                        "w-2 h-2 rounded-full",
-                        member.online ? "bg-green-500" : "bg-gray-400"
-                      )}
-                    />
-                  </div>
-                ))}
+                  );
+                })}
+                {!teamLoading && teamMembers.length > 8 && (
+                  <Link href="/team">
+                    <p className="text-xs text-indigo-500 hover:text-indigo-600 px-2 py-1 cursor-pointer">
+                      +{teamMembers.length - 8} more members
+                    </p>
+                  </Link>
+                )}
               </div>
             )}
           </div>
