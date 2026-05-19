@@ -1,4 +1,7 @@
-import { pgTable, pgEnum, text, integer, boolean, timestamp, numeric, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable, pgEnum, text, integer, boolean,
+  timestamp, numeric, jsonb, index, uniqueIndex, primaryKey,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,11 +28,22 @@ export const blockTypeEnum = pgEnum("block_type", ["PARAGRAPH", "HEADING1", "HEA
 export const propertyTypeEnum = pgEnum("property_type", ["TEXT", "NUMBER", "SELECT", "MULTI_SELECT", "DATE", "CHECKBOX", "URL", "RELATION", "ROLLUP"]);
 export const viewTypeEnum = pgEnum("view_type", ["BOARD", "TABLE", "CALENDAR", "GALLERY", "TIMELINE", "LIST"]);
 export const automationRunStatusEnum = pgEnum("automation_run_status", ["PENDING", "SUCCESS", "FAILED", "SKIPPED"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["TASK_ASSIGNED", "TASK_DUE_SOON", "TASK_COMPLETED", "COMMENT_ADDED", "COMMENT_MENTION", "CLIENT_REVIEW_REQUESTED", "CLIENT_APPROVED", "CLIENT_REJECTED", "INVITATION_RECEIVED", "PROJECT_UPDATED", "SYSTEM_ALERT"]);
-export const workspaceEventTypeEnum = pgEnum("workspace_event_type", ["TASK_CREATED", "TASK_UPDATED", "TASK_DELETED", "TASK_MOVED", "TASK_ASSIGNED", "TASK_COMPLETED", "COMMENT_ADDED", "COMMENT_DELETED", "FILE_UPLOADED", "FILE_DELETED", "CLIENT_CREATED", "CLIENT_UPDATED", "PROJECT_CREATED", "PROJECT_UPDATED", "REVIEW_SUBMITTED", "MEMBER_ADDED", "MEMBER_REMOVED"]);
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "TASK_ASSIGNED", "TASK_DUE_SOON", "TASK_COMPLETED", "COMMENT_ADDED", "COMMENT_MENTION",
+  "CLIENT_REVIEW_REQUESTED", "CLIENT_APPROVED", "CLIENT_REJECTED", "INVITATION_RECEIVED",
+  "PROJECT_UPDATED", "SYSTEM_ALERT",
+]);
+export const workspaceEventTypeEnum = pgEnum("workspace_event_type", [
+  "TASK_CREATED", "TASK_UPDATED", "TASK_DELETED", "TASK_MOVED", "TASK_ASSIGNED", "TASK_COMPLETED",
+  "COMMENT_ADDED", "COMMENT_DELETED", "FILE_UPLOADED", "FILE_DELETED",
+  "CLIENT_CREATED", "CLIENT_UPDATED", "PROJECT_CREATED", "PROJECT_UPDATED",
+  "REVIEW_SUBMITTED", "MEMBER_ADDED", "MEMBER_REMOVED",
+]);
 export const invitationStatusEnum = pgEnum("invitation_status", ["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]);
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
+
+// Users and agencies are mutually referencing; both use () => lambdas for FK refs.
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -44,7 +58,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   role: roleEnum("role").notNull().default("TEAM_MEMBER"),
-  agencyId: text("agency_id"),
+  agencyId: text("agency_id").references(() => agencies.id, { onDelete: "set null" }),
 }, (t) => [
   index("users_agency_id_idx").on(t.agencyId),
   index("users_status_idx").on(t.status),
@@ -63,7 +77,7 @@ export const agencies = pgTable("agencies", {
   workingDays: integer("working_days").array().notNull().default([0, 1, 2, 3, 4]),
   workingHoursStart: text("working_hours_start").notNull().default("09:00"),
   workingHoursEnd: text("working_hours_end").notNull().default("17:00"),
-  ownerId: text("owner_id"),
+  ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -78,14 +92,16 @@ export const sessions = pgTable("session", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
-  userId: text("user_id").notNull(),
-});
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (t) => [
+  index("sessions_user_id_idx").on(t.userId),
+]);
 
 export const accounts = pgTable("account", {
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull(),
   providerId: text("provider_id").notNull(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   idToken: text("id_token"),
@@ -95,7 +111,9 @@ export const accounts = pgTable("account", {
   password: text("password"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-});
+}, (t) => [
+  index("accounts_user_id_idx").on(t.userId),
+]);
 
 export const verifications = pgTable("verification", {
   id: text("id").primaryKey(),
@@ -104,7 +122,9 @@ export const verifications = pgTable("verification", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
-});
+}, (t) => [
+  index("verifications_identifier_idx").on(t.identifier),
+]);
 
 export const invitations = pgTable("invitations", {
   id: text("id").primaryKey(),
@@ -115,9 +135,9 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  agencyId: text("agency_id").notNull(),
-  invitedById: text("invited_by_id").notNull(),
-  userId: text("user_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  invitedById: text("invited_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -143,10 +163,10 @@ export const clients = pgTable("clients", {
   contractType: text("contract_type"),
   monthlyBudget: numeric("monthly_budget", { precision: 12, scale: 2 }),
   hourlyRate: numeric("hourly_rate", { precision: 8, scale: 2 }),
-  createdById: text("created_by_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  agencyId: text("agency_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -164,7 +184,7 @@ export const clientContacts = pgTable("client_contacts", {
   position: text("position"),
   roleType: text("role_type"),
   isPrimary: boolean("is_primary").notNull().default(false),
-  clientId: text("client_id").notNull(),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -174,9 +194,9 @@ export const clientContacts = pgTable("client_contacts", {
 
 export const clientPortalUsers = pgTable("client_portal_users", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id").notNull(),
-  contactId: text("contact_id").unique(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  contactId: text("contact_id").unique().references(() => clientContacts.id, { onDelete: "set null" }),
   email: text("email").notNull(),
   name: text("name").notNull(),
   image: text("image"),
@@ -209,7 +229,7 @@ export const brandKits = pgTable("brand_kits", {
   guidelinesFileUrl: text("guidelines_file_url"),
   assetLibrary: jsonb("asset_library"),
   completionPercent: integer("completion_percent").notNull().default(0),
-  clientId: text("client_id").notNull().unique(),
+  clientId: text("client_id").notNull().unique().references(() => clients.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -226,8 +246,8 @@ export const clientStrategies = pgTable("client_strategies", {
   control: jsonb("control"),
   kpis: jsonb("kpis"),
   completionPercent: integer("completion_percent").notNull().default(0),
-  createdById: text("created_by_id"),
-  clientId: text("client_id").notNull().unique(),
+  clientId: text("client_id").notNull().unique().references(() => clients.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -250,11 +270,11 @@ export const projects = pgTable("projects", {
   coverImage: text("cover_image"),
   iconEmoji: text("icon_emoji"),
   iconColor: text("icon_color"),
-  createdById: text("created_by_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -265,11 +285,12 @@ export const projects = pgTable("projects", {
 ]);
 
 export const projectMembers = pgTable("project_members", {
-  projectId: text("project_id").notNull(),
-  userId: text("user_id").notNull(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: roleEnum("role").notNull().default("TEAM_MEMBER"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  primaryKey({ columns: [t.projectId, t.userId] }),
   index("project_members_user_id_idx").on(t.userId),
 ]);
 
@@ -282,7 +303,7 @@ export const projectStages = pgTable("project_stages", {
   isDefault: boolean("is_default").notNull().default(false),
   isDone: boolean("is_done").notNull().default(false),
   isClientReview: boolean("is_client_review").notNull().default(false),
-  projectId: text("project_id").notNull(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -309,13 +330,13 @@ export const tasks = pgTable("tasks", {
   iconEmoji: text("icon_emoji"),
   iconColor: text("icon_color"),
   position: integer("position").notNull().default(0),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  stageId: text("stage_id").notNull().references(() => projectStages.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  reviewerId: text("reviewer_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  agencyId: text("agency_id").notNull(),
-  projectId: text("project_id").notNull(),
-  stageId: text("stage_id").notNull(),
-  createdById: text("created_by_id").notNull(),
-  reviewerId: text("reviewer_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -329,10 +350,11 @@ export const tasks = pgTable("tasks", {
 ]);
 
 export const taskAssignees = pgTable("task_assignees", {
-  taskId: text("task_id").notNull(),
-  userId: text("user_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  primaryKey({ columns: [t.taskId, t.userId] }),
   index("task_assignees_user_id_idx").on(t.userId),
 ]);
 
@@ -343,8 +365,8 @@ export const subtasks = pgTable("subtasks", {
   dueDate: timestamp("due_date", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   position: integer("position").notNull().default(0),
-  taskId: text("task_id").notNull(),
-  assigneeId: text("assignee_id"),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -354,10 +376,11 @@ export const subtasks = pgTable("subtasks", {
 ]);
 
 export const taskDependencies = pgTable("task_dependencies", {
-  taskId: text("task_id").notNull(),
-  dependsOnTaskId: text("depends_on_task_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  dependsOnTaskId: text("depends_on_task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  primaryKey({ columns: [t.taskId, t.dependsOnTaskId] }),
   index("task_dependencies_depends_on_idx").on(t.dependsOnTaskId),
 ]);
 
@@ -365,7 +388,7 @@ export const tags = pgTable("tags", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   color: text("color").notNull().default("#64748b"),
-  agencyId: text("agency_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -374,24 +397,25 @@ export const tags = pgTable("tags", {
 ]);
 
 export const taskTags = pgTable("task_tags", {
-  taskId: text("task_id").notNull(),
-  tagId: text("tag_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  tagId: text("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  primaryKey({ columns: [t.taskId, t.tagId] }),
   index("task_tags_tag_id_idx").on(t.tagId),
 ]);
 
 export const fileAssets = pgTable("file_assets", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id"),
-  projectId: text("project_id"),
-  taskId: text("task_id"),
-  commentId: text("comment_id"),
-  brandKitId: text("brand_kit_id"),
-  strategyId: text("strategy_id"),
-  uploadedById: text("uploaded_by_id"),
-  uploadedByClientPortalUserId: text("uploaded_by_client_portal_user_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  commentId: text("comment_id").references(() => taskComments.id, { onDelete: "set null" }),
+  brandKitId: text("brand_kit_id").references(() => brandKits.id, { onDelete: "set null" }),
+  strategyId: text("strategy_id").references(() => clientStrategies.id, { onDelete: "set null" }),
+  uploadedById: text("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  uploadedByClientPortalUserId: text("uploaded_by_client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
   fileName: text("file_name").notNull(),
   fileKey: text("file_key").notNull(),
   fileUrl: text("file_url").notNull(),
@@ -415,15 +439,15 @@ export const fileAssets = pgTable("file_assets", {
 
 export const taskComments = pgTable("task_comments", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  taskId: text("task_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
   authorType: commentAuthorTypeEnum("author_type").notNull().default("TEAM"),
-  authorUserId: text("author_user_id"),
-  authorClientPortalUserId: text("author_client_portal_user_id"),
+  authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  authorClientPortalUserId: text("author_client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
   content: text("content").notNull(),
   mentions: text("mentions").array().notNull().default([]),
   isClientFeedback: boolean("is_client_feedback").notNull().default(false),
-  parentCommentId: text("parent_comment_id"),
+  parentCommentId: text("parent_comment_id").references((): any => taskComments.id, { onDelete: "set null" }),
   editedAt: timestamp("edited_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -437,9 +461,9 @@ export const taskComments = pgTable("task_comments", {
 
 export const commentReactions = pgTable("comment_reactions", {
   id: text("id").primaryKey(),
-  commentId: text("comment_id").notNull(),
-  userId: text("user_id"),
-  clientPortalUserId: text("client_portal_user_id"),
+  commentId: text("comment_id").notNull().references(() => taskComments.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  clientPortalUserId: text("client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
   emoji: text("emoji").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -449,11 +473,11 @@ export const commentReactions = pgTable("comment_reactions", {
 
 export const timeEntries = pgTable("time_entries", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  userId: text("user_id").notNull(),
-  clientId: text("client_id"),
-  projectId: text("project_id").notNull(),
-  taskId: text("task_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),
   endTime: timestamp("end_time", { withTimezone: true }),
   durationMinutes: integer("duration_minutes"),
@@ -473,15 +497,15 @@ export const timeEntries = pgTable("time_entries", {
 
 export const clientReviews = pgTable("client_reviews", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id").notNull(),
-  projectId: text("project_id"),
-  taskId: text("task_id").notNull(),
-  reviewerId: text("reviewer_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  reviewerId: text("reviewer_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
   outcome: reviewOutcomeEnum("outcome").notNull(),
   reason: text("reason"),
   faultAttribution: faultAttributionEnum("fault_attribution"),
-  commentId: text("comment_id").unique(),
+  commentId: text("comment_id").unique().references(() => taskComments.id, { onDelete: "set null" }),
   metadata: jsonb("metadata"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -495,12 +519,12 @@ export const clientReviews = pgTable("client_reviews", {
 
 export const qualityEvents = pgTable("quality_events", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id").notNull(),
-  projectId: text("project_id"),
-  taskId: text("task_id"),
-  memberId: text("member_id"),
-  reviewId: text("review_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  memberId: text("member_id").references(() => users.id, { onDelete: "set null" }),
+  reviewId: text("review_id").references(() => clientReviews.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   approved: boolean("approved"),
   faultAttribution: faultAttributionEnum("fault_attribution"),
@@ -514,15 +538,16 @@ export const qualityEvents = pgTable("quality_events", {
   index("quality_events_client_id_idx").on(t.clientId),
   index("quality_events_task_id_idx").on(t.taskId),
   index("quality_events_member_id_idx").on(t.memberId),
+  index("quality_events_review_id_idx").on(t.reviewId),
 ]);
 
 export const qualitySnapshots = pgTable("quality_snapshots", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  clientId: text("client_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
   scopeType: text("scope_type").notNull(),
-  projectId: text("project_id"),
-  memberId: text("member_id"),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  memberId: text("member_id").references(() => users.id, { onDelete: "cascade" }),
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
   approvalRate: numeric("approval_rate", { precision: 5, scale: 2 }),
@@ -540,15 +565,15 @@ export const qualitySnapshots = pgTable("quality_snapshots", {
 
 export const notifications = pgTable("notifications", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  userId: text("user_id"),
-  clientPortalUserId: text("client_portal_user_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  clientPortalUserId: text("client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").notNull(),
   channel: notificationChannelEnum("channel").notNull().default("IN_APP"),
   title: text("title").notNull(),
   body: text("body"),
-  actorUserId: text("actor_user_id"),
-  actorClientPortalUserId: text("actor_client_portal_user_id"),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorClientPortalUserId: text("actor_client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
   entityType: text("entity_type"),
   entityId: text("entity_id"),
   deepLink: text("deep_link"),
@@ -563,9 +588,9 @@ export const notifications = pgTable("notifications", {
 
 export const notificationPreferences = pgTable("notification_preferences", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  userId: text("user_id"),
-  clientPortalUserId: text("client_portal_user_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  clientPortalUserId: text("client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").notNull(),
   inAppEnabled: boolean("in_app_enabled").notNull().default(true),
   emailEnabled: boolean("email_enabled").notNull().default(true),
@@ -579,13 +604,13 @@ export const notificationPreferences = pgTable("notification_preferences", {
 
 export const activityLogs = pgTable("activity_logs", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  actorUserId: text("actor_user_id"),
-  actorClientPortalUserId: text("actor_client_portal_user_id"),
-  contactId: text("contact_id"),
-  clientId: text("client_id"),
-  projectId: text("project_id"),
-  taskId: text("task_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorClientPortalUserId: text("actor_client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
+  contactId: text("contact_id").references(() => clientContacts.id, { onDelete: "set null" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
   eventType: workspaceEventTypeEnum("event_type").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
@@ -602,15 +627,15 @@ export const activityLogs = pgTable("activity_logs", {
 
 export const automationRules = pgTable("automation_rules", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  projectId: text("project_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   triggerType: text("trigger_type").notNull(),
   conditions: jsonb("conditions"),
   actionType: text("action_type").notNull(),
   actions: jsonb("actions"),
   name: text("name").notNull(),
   enabled: boolean("enabled").notNull().default(true),
-  createdById: text("created_by_id"),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true }),
   executionCount: integer("execution_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -623,8 +648,8 @@ export const automationRules = pgTable("automation_rules", {
 
 export const automationRuns = pgTable("automation_runs", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  ruleId: text("rule_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  ruleId: text("rule_id").references(() => automationRules.id, { onDelete: "set null" }),
   status: automationRunStatusEnum("status").notNull().default("PENDING"),
   triggerEvent: text("trigger_event").notNull(),
   entityType: text("entity_type"),
@@ -641,11 +666,11 @@ export const automationRuns = pgTable("automation_runs", {
 
 export const projectTemplates = pgTable("project_templates", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   type: projectTypeEnum("type"),
-  createdById: text("created_by_id"),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -656,14 +681,14 @@ export const projectTemplates = pgTable("project_templates", {
 
 export const taskTemplates = pgTable("task_templates", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: taskTypeEnum("type").notNull(),
   defaultPriority: taskPriorityEnum("default_priority").notNull().default("MEDIUM"),
   defaultAssigneeRole: roleEnum("default_assignee_role"),
   estimatedMinutes: integer("estimated_minutes"),
   defaultTags: text("default_tags").array().notNull().default([]),
-  createdById: text("created_by_id"),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -674,12 +699,12 @@ export const taskTemplates = pgTable("task_templates", {
 
 export const workspaceEvents = pgTable("workspace_events", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
-  actorUserId: text("actor_user_id"),
-  actorClientPortalUserId: text("actor_client_portal_user_id"),
-  clientId: text("client_id"),
-  projectId: text("project_id"),
-  taskId: text("task_id"),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorClientPortalUserId: text("actor_client_portal_user_id").references(() => clientPortalUsers.id, { onDelete: "set null" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
   eventType: workspaceEventTypeEnum("event_type").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
@@ -698,7 +723,7 @@ export const workspaceEvents = pgTable("workspace_events", {
 
 export const vectorEmbeddings = pgTable("vector_embeddings", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   sourceType: text("source_type").notNull(),
   sourceId: text("source_id").notNull(),
   content: text("content").notNull(),
@@ -714,10 +739,10 @@ export const blocks = pgTable("blocks", {
   type: blockTypeEnum("type").notNull(),
   content: jsonb("content"),
   position: integer("position").notNull(),
-  parentId: text("parent_id"),
-  taskId: text("task_id"),
-  projectId: text("project_id"),
-  clientId: text("client_id"),
+  parentId: text("parent_id").references((): any => blocks.id, { onDelete: "cascade" }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -732,9 +757,9 @@ export const templateBlocks = pgTable("template_blocks", {
   type: blockTypeEnum("type").notNull(),
   content: jsonb("content"),
   position: integer("position").notNull(),
-  parentId: text("parent_id"),
-  taskTemplateId: text("task_template_id"),
-  projectTemplateId: text("project_template_id"),
+  parentId: text("parent_id").references((): any => templateBlocks.id, { onDelete: "cascade" }),
+  taskTemplateId: text("task_template_id").references(() => taskTemplates.id, { onDelete: "cascade" }),
+  projectTemplateId: text("project_template_id").references(() => projectTemplates.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -745,7 +770,7 @@ export const templateBlocks = pgTable("template_blocks", {
 
 export const taskProperties = pgTable("task_properties", {
   id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull(),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: propertyTypeEnum("type").notNull(),
   options: jsonb("options"),
@@ -758,19 +783,20 @@ export const taskProperties = pgTable("task_properties", {
 ]);
 
 export const taskPropertyValues = pgTable("task_property_values", {
-  taskId: text("task_id").notNull(),
-  propertyId: text("property_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  propertyId: text("property_id").notNull().references(() => taskProperties.id, { onDelete: "cascade" }),
   value: jsonb("value").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  primaryKey({ columns: [t.taskId, t.propertyId] }),
   index("task_property_values_task_id_idx").on(t.taskId),
   index("task_property_values_property_id_idx").on(t.propertyId),
 ]);
 
 export const propertyRelations = pgTable("property_relations", {
   id: text("id").primaryKey(),
-  propertyId: text("property_id").notNull().unique(),
+  propertyId: text("property_id").notNull().unique().references(() => taskProperties.id, { onDelete: "cascade" }),
   targetModel: text("target_model").notNull(),
   displayField: text("display_field").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -779,7 +805,7 @@ export const propertyRelations = pgTable("property_relations", {
 
 export const projectViews = pgTable("project_views", {
   id: text("id").primaryKey(),
-  projectId: text("project_id").notNull(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: viewTypeEnum("type").notNull(),
   filterBy: jsonb("filter_by"),
@@ -795,7 +821,7 @@ export const projectViews = pgTable("project_views", {
 
 export const projectTemplateStages = pgTable("project_template_stages", {
   id: text("id").primaryKey(),
-  templateId: text("template_id").notNull(),
+  templateId: text("template_id").notNull().references(() => projectTemplates.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   isDone: boolean("is_done").notNull().default(false),
@@ -810,8 +836,8 @@ export const projectTemplateStages = pgTable("project_template_stages", {
 
 export const taskTemplateProperties = pgTable("task_template_properties", {
   id: text("id").primaryKey(),
-  templateId: text("template_id").notNull(),
-  propertyId: text("property_id").notNull(),
+  templateId: text("template_id").notNull().references(() => taskTemplates.id, { onDelete: "cascade" }),
+  propertyId: text("property_id").notNull().references(() => taskProperties.id, { onDelete: "cascade" }),
   defaultValue: jsonb("default_value"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -822,133 +848,148 @@ export const taskTemplateProperties = pgTable("task_template_properties", {
 ]);
 
 // ─── Insert Schemas (drizzle-zod) ─────────────────────────────────────────────
+// id is always omitted — storage layers generate IDs server-side.
 
-export const insertUserSchema = createInsertSchema(users).omit({ createdAt: true, updatedAt: true });
-export const insertAgencySchema = createInsertSchema(agencies).omit({ createdAt: true, updatedAt: true });
-export const insertClientSchema = createInsertSchema(clients).omit({ createdAt: true, updatedAt: true });
-export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ createdAt: true, updatedAt: true });
-export const insertClientPortalUserSchema = createInsertSchema(clientPortalUsers).omit({ createdAt: true, updatedAt: true });
-export const insertBrandKitSchema = createInsertSchema(brandKits).omit({ createdAt: true, updatedAt: true });
-export const insertClientStrategySchema = createInsertSchema(clientStrategies).omit({ createdAt: true, updatedAt: true });
-export const insertProjectSchema = createInsertSchema(projects).omit({ createdAt: true, updatedAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAgencySchema = createInsertSchema(agencies).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
+export const insertAccountSchema = createInsertSchema(accounts).omit({ id: true });
+export const insertVerificationSchema = createInsertSchema(verifications).omit({ id: true });
+export const insertInvitationSchema = createInsertSchema(invitations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientPortalUserSchema = createInsertSchema(clientPortalUsers).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertBrandKitSchema = createInsertSchema(brandKits).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientStrategySchema = createInsertSchema(clientStrategies).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProjectMemberSchema = createInsertSchema(projectMembers).omit({ createdAt: true });
-export const insertProjectStageSchema = createInsertSchema(projectStages).omit({ createdAt: true, updatedAt: true });
-export const insertTaskSchema = createInsertSchema(tasks).omit({ createdAt: true, updatedAt: true });
+export const insertProjectStageSchema = createInsertSchema(projectStages).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskAssigneeSchema = createInsertSchema(taskAssignees).omit({ createdAt: true });
-export const insertSubtaskSchema = createInsertSchema(subtasks).omit({ createdAt: true, updatedAt: true });
-export const insertTagSchema = createInsertSchema(tags).omit({ createdAt: true, updatedAt: true });
-export const insertFileAssetSchema = createInsertSchema(fileAssets).omit({ createdAt: true, updatedAt: true });
-export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ createdAt: true, updatedAt: true });
-export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ createdAt: true, updatedAt: true });
-export const insertClientReviewSchema = createInsertSchema(clientReviews).omit({ createdAt: true, updatedAt: true });
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ createdAt: true });
-export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({ createdAt: true, updatedAt: true });
-export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ createdAt: true });
-export const insertAutomationRuleSchema = createInsertSchema(automationRules).omit({ createdAt: true, updatedAt: true });
-export const insertBlockSchema = createInsertSchema(blocks).omit({ createdAt: true, updatedAt: true });
-export const insertProjectViewSchema = createInsertSchema(projectViews).omit({ createdAt: true, updatedAt: true });
-export const insertInvitationSchema = createInsertSchema(invitations).omit({ createdAt: true, updatedAt: true });
+export const insertSubtaskSchema = createInsertSchema(subtasks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskDependencySchema = createInsertSchema(taskDependencies).omit({ createdAt: true });
+export const insertTagSchema = createInsertSchema(tags).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ createdAt: true });
+export const insertFileAssetSchema = createInsertSchema(fileAssets).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCommentReactionSchema = createInsertSchema(commentReactions).omit({ id: true, createdAt: true });
+export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientReviewSchema = createInsertSchema(clientReviews).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertQualityEventSchema = createInsertSchema(qualityEvents).omit({ id: true, createdAt: true, occurredAt: true });
+export const insertQualitySnapshotSchema = createInsertSchema(qualitySnapshots).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
+export const insertAutomationRuleSchema = createInsertSchema(automationRules).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAutomationRunSchema = createInsertSchema(automationRuns).omit({ id: true, startedAt: true });
+export const insertProjectTemplateSchema = createInsertSchema(projectTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertWorkspaceEventSchema = createInsertSchema(workspaceEvents).omit({ id: true, occurredAt: true });
+export const insertVectorEmbeddingSchema = createInsertSchema(vectorEmbeddings).omit({ id: true, createdAt: true });
+export const insertBlockSchema = createInsertSchema(blocks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTemplateBlockSchema = createInsertSchema(templateBlocks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskPropertySchema = createInsertSchema(taskProperties).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskPropertyValueSchema = createInsertSchema(taskPropertyValues).omit({ createdAt: true, updatedAt: true });
+export const insertPropertyRelationSchema = createInsertSchema(propertyRelations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertProjectViewSchema = createInsertSchema(projectViews).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertProjectTemplateStageSchema = createInsertSchema(projectTemplateStages).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskTemplatePropertySchema = createInsertSchema(taskTemplateProperties).omit({ id: true, createdAt: true, updatedAt: true });
 
-// ─── TypeScript Types ─────────────────────────────────────────────────────────
+// ─── TypeScript Select Types ──────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
 export type Agency = typeof agencies.$inferSelect;
-export type InsertAgency = z.infer<typeof insertAgencySchema>;
-
+export type Session = typeof sessions.$inferSelect;
+export type Account = typeof accounts.$inferSelect;
+export type Verification = typeof verifications.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
 export type Client = typeof clients.$inferSelect;
-export type InsertClient = z.infer<typeof insertClientSchema>;
-
 export type ClientContact = typeof clientContacts.$inferSelect;
-export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
-
 export type ClientPortalUser = typeof clientPortalUsers.$inferSelect;
-export type InsertClientPortalUser = z.infer<typeof insertClientPortalUserSchema>;
-
 export type BrandKit = typeof brandKits.$inferSelect;
-export type InsertBrandKit = z.infer<typeof insertBrandKitSchema>;
-
 export type ClientStrategy = typeof clientStrategies.$inferSelect;
-export type InsertClientStrategy = z.infer<typeof insertClientStrategySchema>;
-
 export type Project = typeof projects.$inferSelect;
-export type InsertProject = z.infer<typeof insertProjectSchema>;
-
 export type ProjectMember = typeof projectMembers.$inferSelect;
-export type InsertProjectMember = z.infer<typeof insertProjectMemberSchema>;
-
 export type ProjectStage = typeof projectStages.$inferSelect;
-export type InsertProjectStage = z.infer<typeof insertProjectStageSchema>;
-
 export type Task = typeof tasks.$inferSelect;
-export type InsertTask = z.infer<typeof insertTaskSchema>;
-
 export type TaskAssignee = typeof taskAssignees.$inferSelect;
-export type InsertTaskAssignee = z.infer<typeof insertTaskAssigneeSchema>;
-
 export type Subtask = typeof subtasks.$inferSelect;
-export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
-
 export type TaskDependency = typeof taskDependencies.$inferSelect;
-
 export type Tag = typeof tags.$inferSelect;
-export type InsertTag = z.infer<typeof insertTagSchema>;
-
 export type TaskTag = typeof taskTags.$inferSelect;
-
 export type FileAsset = typeof fileAssets.$inferSelect;
-export type InsertFileAsset = z.infer<typeof insertFileAssetSchema>;
-
 export type TaskComment = typeof taskComments.$inferSelect;
-export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
-
 export type CommentReaction = typeof commentReactions.$inferSelect;
-
 export type TimeEntry = typeof timeEntries.$inferSelect;
-export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
-
 export type ClientReview = typeof clientReviews.$inferSelect;
-export type InsertClientReview = z.infer<typeof insertClientReviewSchema>;
-
 export type QualityEvent = typeof qualityEvents.$inferSelect;
 export type QualitySnapshot = typeof qualitySnapshots.$inferSelect;
-
 export type Notification = typeof notifications.$inferSelect;
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-
 export type NotificationPreference = typeof notificationPreferences.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
-
 export type AutomationRule = typeof automationRules.$inferSelect;
-export type InsertAutomationRule = z.infer<typeof insertAutomationRuleSchema>;
-
 export type AutomationRun = typeof automationRuns.$inferSelect;
-
 export type ProjectTemplate = typeof projectTemplates.$inferSelect;
 export type TaskTemplate = typeof taskTemplates.$inferSelect;
-
 export type WorkspaceEvent = typeof workspaceEvents.$inferSelect;
 export type VectorEmbedding = typeof vectorEmbeddings.$inferSelect;
-
 export type Block = typeof blocks.$inferSelect;
-export type InsertBlock = z.infer<typeof insertBlockSchema>;
-
 export type TemplateBlock = typeof templateBlocks.$inferSelect;
 export type TaskProperty = typeof taskProperties.$inferSelect;
 export type TaskPropertyValue = typeof taskPropertyValues.$inferSelect;
 export type PropertyRelation = typeof propertyRelations.$inferSelect;
-
 export type ProjectView = typeof projectViews.$inferSelect;
-export type InsertProjectView = z.infer<typeof insertProjectViewSchema>;
-
 export type ProjectStageTemplate = typeof projectTemplateStages.$inferSelect;
 export type TaskTemplateProperty = typeof taskTemplateProperties.$inferSelect;
 
-export type Invitation = typeof invitations.$inferSelect;
-export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
+// ─── TypeScript Insert Types ──────────────────────────────────────────────────
 
-// ─── Enum value type exports ──────────────────────────────────────────────────
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertAgency = z.infer<typeof insertAgencySchema>;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type InsertAccount = z.infer<typeof insertAccountSchema>;
+export type InsertVerification = z.infer<typeof insertVerificationSchema>;
+export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
+export type InsertClientPortalUser = z.infer<typeof insertClientPortalUserSchema>;
+export type InsertBrandKit = z.infer<typeof insertBrandKitSchema>;
+export type InsertClientStrategy = z.infer<typeof insertClientStrategySchema>;
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type InsertProjectMember = z.infer<typeof insertProjectMemberSchema>;
+export type InsertProjectStage = z.infer<typeof insertProjectStageSchema>;
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type InsertTaskAssignee = z.infer<typeof insertTaskAssigneeSchema>;
+export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
+export type InsertTaskDependency = z.infer<typeof insertTaskDependencySchema>;
+export type InsertTag = z.infer<typeof insertTagSchema>;
+export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
+export type InsertFileAsset = z.infer<typeof insertFileAssetSchema>;
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+export type InsertCommentReaction = z.infer<typeof insertCommentReactionSchema>;
+export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
+export type InsertClientReview = z.infer<typeof insertClientReviewSchema>;
+export type InsertQualityEvent = z.infer<typeof insertQualityEventSchema>;
+export type InsertQualitySnapshot = z.infer<typeof insertQualitySnapshotSchema>;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type InsertAutomationRule = z.infer<typeof insertAutomationRuleSchema>;
+export type InsertAutomationRun = z.infer<typeof insertAutomationRunSchema>;
+export type InsertProjectTemplate = z.infer<typeof insertProjectTemplateSchema>;
+export type InsertTaskTemplate = z.infer<typeof insertTaskTemplateSchema>;
+export type InsertWorkspaceEvent = z.infer<typeof insertWorkspaceEventSchema>;
+export type InsertVectorEmbedding = z.infer<typeof insertVectorEmbeddingSchema>;
+export type InsertBlock = z.infer<typeof insertBlockSchema>;
+export type InsertTemplateBlock = z.infer<typeof insertTemplateBlockSchema>;
+export type InsertTaskProperty = z.infer<typeof insertTaskPropertySchema>;
+export type InsertTaskPropertyValue = z.infer<typeof insertTaskPropertyValueSchema>;
+export type InsertPropertyRelation = z.infer<typeof insertPropertyRelationSchema>;
+export type InsertProjectView = z.infer<typeof insertProjectViewSchema>;
+export type InsertProjectStageTemplate = z.infer<typeof insertProjectTemplateStageSchema>;
+export type InsertTaskTemplateProperty = z.infer<typeof insertTaskTemplatePropertySchema>;
+
+// ─── Enum value types ─────────────────────────────────────────────────────────
 
 export type Role = typeof roleEnum.enumValues[number];
 export type UserStatus = typeof userStatusEnum.enumValues[number];
@@ -958,6 +999,19 @@ export type ProjectStatus = typeof projectStatusEnum.enumValues[number];
 export type ProjectType = typeof projectTypeEnum.enumValues[number];
 export type TaskType = typeof taskTypeEnum.enumValues[number];
 export type TaskPriority = typeof taskPriorityEnum.enumValues[number];
+export type StrategyStatus = typeof strategyStatusEnum.enumValues[number];
 export type TaskReviewStatus = typeof taskReviewStatusEnum.enumValues[number];
-export type NotificationType = typeof notificationTypeEnum.enumValues[number];
+export type PortalUserStatus = typeof portalUserStatusEnum.enumValues[number];
+export type CommentAuthorType = typeof commentAuthorTypeEnum.enumValues[number];
+export type ReviewOutcome = typeof reviewOutcomeEnum.enumValues[number];
+export type FaultAttribution = typeof faultAttributionEnum.enumValues[number];
+export type AttachmentContext = typeof attachmentContextEnum.enumValues[number];
 export type TimeEntrySource = typeof timeEntrySourceEnum.enumValues[number];
+export type NotificationChannel = typeof notificationChannelEnum.enumValues[number];
+export type BlockType = typeof blockTypeEnum.enumValues[number];
+export type PropertyType = typeof propertyTypeEnum.enumValues[number];
+export type ViewType = typeof viewTypeEnum.enumValues[number];
+export type AutomationRunStatus = typeof automationRunStatusEnum.enumValues[number];
+export type NotificationType = typeof notificationTypeEnum.enumValues[number];
+export type WorkspaceEventType = typeof workspaceEventTypeEnum.enumValues[number];
+export type InvitationStatus = typeof invitationStatusEnum.enumValues[number];
