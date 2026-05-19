@@ -328,8 +328,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Returns all task-assignee records for every task in a project in one query
-  app.get("/api/projects/:projectId/task-assignees", requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/task-assignees", requireAuth, async (req: any, res) => {
     try {
+      const [project, requester] = await Promise.all([
+        storage.getProject(req.params.projectId),
+        storage.getUser(req.userId),
+      ]);
+      if (!project || !requester || project.agencyId !== requester.agencyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const rows = await db
         .select({
           taskId:    taskAssignees.taskId,
@@ -408,14 +415,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Task Assignees ──────────────────────────────────────────────────────────
 
-  // Helper: verify the task belongs to the requesting user's agency
-  async function verifyTaskAgency(taskId: string, requestUserId: string): Promise<boolean> {
+  // Helper: verify the task belongs to the requesting user's agency.
+  // Returns the shared agencyId on success, null on failure.
+  async function verifyTaskAgency(taskId: string, requestUserId: string): Promise<string | null> {
     const [task, user] = await Promise.all([
       storage.getTask(taskId),
       storage.getUser(requestUserId),
     ]);
-    if (!task || !user) return false;
-    return task.agencyId === user.agencyId;
+    if (!task || !user || task.agencyId !== user.agencyId) return null;
+    return task.agencyId ?? null;
   }
 
   app.get("/api/tasks/:taskId/assignees", requireAuth, async (req: any, res) => {
@@ -436,11 +444,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks/:taskId/assignees", requireAuth, async (req: any, res) => {
     try {
-      if (!await verifyTaskAgency(req.params.taskId, req.userId)) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+      const agencyId = await verifyTaskAgency(req.params.taskId, req.userId);
+      if (!agencyId) return res.status(403).json({ error: "Forbidden" });
+
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: "userId is required" });
+
+      // Ensure the target user belongs to the same agency (prevents cross-tenant assignment)
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || targetUser.agencyId !== agencyId) {
+        return res.status(403).json({ error: "Cannot assign a user from another agency" });
+      }
+
       await db
         .insert(taskAssignees)
         .values({ taskId: req.params.taskId, userId })
