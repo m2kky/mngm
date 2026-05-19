@@ -41,7 +41,7 @@ const adminNavigation = [
 
 export function Sidebar({ isCollapsed }: SidebarProps) {
   const [location] = useLocation();
-  const { userProfile } = useAuth();
+  const { userProfile, loading: authLoading } = useAuth();
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
 
   const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
@@ -191,7 +191,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
             
             {workspaceExpanded && (
               <div className="space-y-2">
-                {teamLoading && (
+                {(authLoading || teamLoading) && (
                   <>
                     {[1, 2, 3].map(i => (
                       <div key={i} className="flex items-center space-x-2 p-2 animate-pulse">
@@ -204,13 +204,13 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
                     ))}
                   </>
                 )}
-                {!teamLoading && teamError && (
+                {!authLoading && !teamLoading && teamError && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Unable to load team members</p>
                 )}
-                {!teamLoading && !teamError && teamMembers.length === 0 && (
+                {!authLoading && !teamLoading && !teamError && teamMembers.length === 0 && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">No team members yet</p>
                 )}
-                {!teamLoading && !teamError && teamMembers.slice(0, 8).map((member) => {
+                {!authLoading && !teamLoading && !teamError && teamMembers.slice(0, 8).map((member) => {
                   const initials = (member.name ?? member.email ?? "?")
                     .split(" ")
                     .map((n: string) => n[0])
@@ -247,7 +247,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
                     </div>
                   );
                 })}
-                {!teamLoading && !teamError && teamMembers.length > 8 && (
+                {!authLoading && !teamLoading && !teamError && teamMembers.length > 8 && (
                   <Link href="/team">
                     <p className="text-xs text-indigo-500 hover:text-indigo-600 px-2 py-1 cursor-pointer">
                       +{teamMembers.length - 8} more members
