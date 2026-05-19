@@ -19,11 +19,12 @@ import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
   Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
+  FolderPlus, Layers,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import type { Task, ProjectStage, Project, User } from "@shared/schema";
+import type { Task, ProjectStage, Project, User, Client } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -617,6 +618,271 @@ function KanbanColumn({
   );
 }
 
+// ─── CreateProjectModal ───────────────────────────────────────────────────────
+
+const DEFAULT_STAGES = [
+  { name: "To Do",      color: "#6366f1", order: 1 },
+  { name: "In Progress",color: "#f59e0b", order: 2 },
+  { name: "Review",     color: "#8b5cf6", order: 3 },
+  { name: "Done",       color: "#10b981", order: 4 },
+];
+
+const projectFormSchema = z.object({
+  name:          z.string().min(1, "Project name is required"),
+  description:   z.string().optional(),
+  clientMode:    z.enum(["existing", "new"]),
+  clientId:      z.string().optional(),
+  newClientName: z.string().optional(),
+}).superRefine((v, ctx) => {
+  if (v.clientMode === "existing" && !v.clientId) {
+    ctx.addIssue({ code: "custom", path: ["clientId"], message: "Select a client" });
+  }
+  if (v.clientMode === "new" && !v.newClientName?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["newClientName"], message: "Client name is required" });
+  }
+});
+type ProjectFormValues = z.infer<typeof projectFormSchema>;
+
+function CreateProjectModal({
+  open, onClose, agencyId, userId,
+}: { open: boolean; onClose: (newProjectId?: string) => void; agencyId: string; userId: string }) {
+  const { toast } = useToast();
+
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: [`/api/clients?agencyId=${agencyId}`],
+    enabled: open && !!agencyId,
+  });
+
+  const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema),
+    defaultValues: { name: "", description: "", clientMode: clients.length ? "existing" : "new", clientId: "", newClientName: "" },
+  });
+
+  // Switch default clientMode once clients load
+  useEffect(() => {
+    if (clients.length && form.getValues("clientMode") === "new" && !form.getValues("newClientName")) {
+      form.setValue("clientMode", "existing");
+    }
+  }, [clients.length]);
+
+  const clientMode = form.watch("clientMode");
+
+  const createMutation = useMutation({
+    mutationFn: async (values: ProjectFormValues) => {
+      // 1. Resolve clientId — create new client if needed
+      let clientId = values.clientId ?? "";
+      if (values.clientMode === "new") {
+        const res = await apiRequest("POST", "/api/clients", {
+          name: values.newClientName!.trim(),
+          agencyId,
+          createdById: userId,
+        });
+        const newClient = await res.json() as Client;
+        clientId = newClient.id;
+      }
+
+      // 2. Create project
+      const projRes = await apiRequest("POST", "/api/projects", {
+        name: values.name.trim(),
+        description: values.description?.trim() || null,
+        agencyId,
+        clientId,
+        createdById: userId,
+      });
+      const project = await projRes.json() as Project;
+
+      // 3. Create default stages
+      await Promise.all(
+        DEFAULT_STAGES.map((s) =>
+          apiRequest("POST", `/api/projects/${project.id}/stages`, {
+            name: s.name,
+            color: s.color,
+            order: s.order,
+            projectId: project.id,
+          }),
+        ),
+      );
+
+      return project;
+    },
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects?agencyId=${agencyId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/clients?agencyId=${agencyId}`] });
+      toast({ title: "Project created", description: `"${project.name}" is ready with default stages.` });
+      form.reset();
+      onClose(project.id);
+    },
+    onError: (e: Error) => {
+      toast({ title: "Failed to create project", description: e.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FolderPlus className="w-4 h-4 text-indigo-500" /> New Project
+          </DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="name" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Project name</FormLabel>
+                <FormControl><Input placeholder="e.g. Website Redesign" {...field} /></FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                <FormControl><Textarea placeholder="What is this project about?" rows={2} {...field} /></FormControl>
+              </FormItem>
+            )} />
+
+            {/* Client selector */}
+            {clients.length > 0 && (
+              <FormField control={form.control} name="clientMode" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Client</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="existing">Select existing client</SelectItem>
+                      <SelectItem value="new">+ Create new client</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            )}
+
+            {clientMode === "existing" && clients.length > 0 ? (
+              <FormField control={form.control} name="clientId" render={({ field }) => (
+                <FormItem>
+                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Pick a client…" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            ) : (
+              <FormField control={form.control} name="newClientName" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{clients.length > 0 ? "New client name" : "Client name"}</FormLabel>
+                  <FormControl><Input placeholder="e.g. Acme Corp" {...field} /></FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            <p className="text-xs text-slate-400">
+              4 default stages will be created automatically: To Do, In Progress, Review, Done.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={() => onClose()}>Cancel</Button>
+              <Button type="submit" disabled={createMutation.isPending}>
+                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Create project
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── CreateStageModal ─────────────────────────────────────────────────────────
+
+const STAGE_COLORS = ["#6366f1","#f59e0b","#8b5cf6","#10b981","#ef4444","#3b82f6","#ec4899","#14b8a6"];
+
+const stageFormSchema = z.object({
+  name:  z.string().min(1, "Stage name is required"),
+  color: z.string().min(1),
+});
+type StageFormValues = z.infer<typeof stageFormSchema>;
+
+function CreateStageModal({
+  open, onClose, projectId, nextOrder,
+}: { open: boolean; onClose: () => void; projectId: string; nextOrder: number }) {
+  const { toast } = useToast();
+
+  const form = useForm<StageFormValues>({
+    resolver: zodResolver(stageFormSchema),
+    defaultValues: { name: "", color: "#6366f1" },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (values: StageFormValues) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/stages`, {
+        name: values.name.trim(),
+        color: values.color,
+        order: nextOrder,
+        projectId,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/stages`] });
+      toast({ title: "Stage added" });
+      form.reset({ name: "", color: "#6366f1" });
+      onClose();
+    },
+    onError: (e: Error) => {
+      toast({ title: "Failed to add stage", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const selectedColor = form.watch("color");
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-500" /> Add Stage
+          </DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="name" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Stage name</FormLabel>
+                <FormControl><Input placeholder="e.g. QA, Blocked, Published…" {...field} /></FormControl>
+              </FormItem>
+            )} />
+
+            <FormItem>
+              <FormLabel>Color</FormLabel>
+              <div className="flex gap-2 flex-wrap">
+                {STAGE_COLORS.map((c) => (
+                  <button
+                    key={c} type="button"
+                    onClick={() => form.setValue("color", c)}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${selectedColor === c ? "border-slate-700 dark:border-white scale-110" : "border-transparent"}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </FormItem>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={createMutation.isPending}>
+                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Add stage
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── EmptyState ───────────────────────────────────────────────────────────────
 
 function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
@@ -637,13 +903,15 @@ export default function Tasks() {
   const agencyId = currentUser?.agencyId ?? "";
   const userId   = currentUser?.id ?? "";
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [filterPriority,    setFilterPriority]    = useState<string>("ALL");
-  const [filterType,        setFilterType]        = useState<string>("ALL");
-  const [filterAssignee,    setFilterAssignee]    = useState<string>("ALL");
-  const [activeId,          setActiveId]          = useState<string | null>(null);
-  const [createModal,       setCreateModal]       = useState<{ open: boolean; stageId: string }>({ open: false, stageId: "" });
-  const [editTask,          setEditTask]          = useState<Task | null>(null);
+  const [selectedProjectId,  setSelectedProjectId]  = useState<string>("");
+  const [filterPriority,     setFilterPriority]     = useState<string>("ALL");
+  const [filterType,         setFilterType]         = useState<string>("ALL");
+  const [filterAssignee,     setFilterAssignee]     = useState<string>("ALL");
+  const [activeId,           setActiveId]           = useState<string | null>(null);
+  const [createModal,        setCreateModal]        = useState<{ open: boolean; stageId: string }>({ open: false, stageId: "" });
+  const [editTask,           setEditTask]           = useState<Task | null>(null);
+  const [createProjectOpen,  setCreateProjectOpen]  = useState(false);
+  const [createStageOpen,    setCreateStageOpen]    = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -773,6 +1041,14 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             )}
+
+            <Button
+              size="sm" variant="outline"
+              className="h-8 text-xs gap-1"
+              onClick={() => setCreateProjectOpen(true)}
+            >
+              <FolderPlus className="w-3.5 h-3.5" /> New project
+            </Button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -861,17 +1137,27 @@ export default function Tasks() {
             <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
           </div>
         ) : !hasProjects ? (
-          <EmptyState
-            icon={<Kanban className="w-10 h-10 text-slate-300" />}
-            title="No projects yet"
-            description="Create a project first, then add stages and tasks here."
-          />
+          <div className="flex flex-col items-center justify-center h-64 text-center gap-4">
+            <Kanban className="w-10 h-10 text-slate-300" />
+            <div>
+              <h3 className="text-base font-semibold text-slate-600 dark:text-slate-300 mb-1">No projects yet</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs mb-4">Create your first project to start organising tasks.</p>
+              <Button onClick={() => setCreateProjectOpen(true)} className="gap-2">
+                <FolderPlus className="w-4 h-4" /> Create first project
+              </Button>
+            </div>
+          </div>
         ) : !hasStages ? (
-          <EmptyState
-            icon={<AlertCircle className="w-10 h-10 text-slate-300" />}
-            title="No stages found"
-            description="This project has no Kanban stages yet. Add stages to start organising tasks."
-          />
+          <div className="flex flex-col items-center justify-center h-64 text-center gap-4">
+            <AlertCircle className="w-10 h-10 text-slate-300" />
+            <div>
+              <h3 className="text-base font-semibold text-slate-600 dark:text-slate-300 mb-1">No stages yet</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs mb-4">Add stages to your project to start organising tasks on the board.</p>
+              <Button onClick={() => setCreateStageOpen(true)} className="gap-2">
+                <Layers className="w-4 h-4" /> Add first stage
+              </Button>
+            </div>
+          </div>
         ) : (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="flex gap-5 items-start">
@@ -912,6 +1198,27 @@ export default function Tasks() {
           </DndContext>
         )}
       </div>
+
+      {/* ── Create project modal ── */}
+      <CreateProjectModal
+        open={createProjectOpen}
+        onClose={(newId) => {
+          setCreateProjectOpen(false);
+          if (newId) setSelectedProjectId(newId);
+        }}
+        agencyId={agencyId}
+        userId={userId}
+      />
+
+      {/* ── Create stage modal ── */}
+      {effectiveProjectId && (
+        <CreateStageModal
+          open={createStageOpen}
+          onClose={() => setCreateStageOpen(false)}
+          projectId={effectiveProjectId}
+          nextOrder={stages.length + 1}
+        />
+      )}
 
       {/* ── Create task modal ── */}
       {createModal.open && effectiveProjectId && (
