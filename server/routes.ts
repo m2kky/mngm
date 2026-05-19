@@ -10,6 +10,7 @@ import {
   type User,
   taskAssignees,
   users,
+  tasks as tasksTable,
   insertUserSchema,
   insertAgencySchema,
   insertClientSchema,
@@ -326,6 +327,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Returns all task-assignee records for every task in a project in one query
+  app.get("/api/projects/:projectId/task-assignees", requireAuth, async (req, res) => {
+    try {
+      const rows = await db
+        .select({
+          taskId:    taskAssignees.taskId,
+          userId:    taskAssignees.userId,
+          userName:  users.name,
+          userEmail: users.email,
+          userImage: users.image,
+        })
+        .from(taskAssignees)
+        .innerJoin(users,       eq(taskAssignees.userId, users.id))
+        .innerJoin(tasksTable,  eq(taskAssignees.taskId, tasksTable.id))
+        .where(eq(tasksTable.projectId, req.params.projectId));
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ─── Tasks ──────────────────────────────────────────────────────────────────
 
   app.get("/api/tasks", requireAuth, async (req, res) => {
@@ -386,8 +408,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Task Assignees ──────────────────────────────────────────────────────────
 
-  app.get("/api/tasks/:taskId/assignees", requireAuth, async (req, res) => {
+  // Helper: verify the task belongs to the requesting user's agency
+  async function verifyTaskAgency(taskId: string, requestUserId: string): Promise<boolean> {
+    const [task, user] = await Promise.all([
+      storage.getTask(taskId),
+      storage.getUser(requestUserId),
+    ]);
+    if (!task || !user) return false;
+    return task.agencyId === user.agencyId;
+  }
+
+  app.get("/api/tasks/:taskId/assignees", requireAuth, async (req: any, res) => {
     try {
+      if (!await verifyTaskAgency(req.params.taskId, req.userId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const rows = await db
         .select({ id: users.id, name: users.name, email: users.email, image: users.image })
         .from(taskAssignees)
@@ -399,8 +434,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tasks/:taskId/assignees", requireAuth, async (req, res) => {
+  app.post("/api/tasks/:taskId/assignees", requireAuth, async (req: any, res) => {
     try {
+      if (!await verifyTaskAgency(req.params.taskId, req.userId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: "userId is required" });
       await db
@@ -413,8 +451,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/tasks/:taskId/assignees/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/tasks/:taskId/assignees/:userId", requireAuth, async (req: any, res) => {
     try {
+      if (!await verifyTaskAgency(req.params.taskId, req.userId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       await db
         .delete(taskAssignees)
         .where(

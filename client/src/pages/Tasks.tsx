@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   DndContext,
@@ -71,6 +71,16 @@ const TYPE_CONFIG = {
 
 const TASK_TYPES = ["DESIGN", "COPY", "DEVELOPMENT", "SOCIAL_POST", "MEETING", "REVIEW", "STRATEGY", "OTHER"] as const;
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type TaskAssigneeEntry = {
+  taskId: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  userImage: string | null;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -294,6 +304,7 @@ function CreateTaskModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/task-assignees`] });
       toast({ title: "Task created" });
       onClose();
     },
@@ -323,18 +334,32 @@ function CreateTaskModal({
 // ─── Edit task modal ──────────────────────────────────────────────────────────
 
 function EditTaskModal({
-  task, open, onClose, projectId, stages, agencyMembers,
+  task, open, onClose, projectId, stages, agencyMembers, currentAssigneeId,
 }: {
   task: Task; open: boolean; onClose: () => void;
   projectId: string; stages: ProjectStage[];
   agencyMembers: Pick<User, "id" | "name" | "email">[];
+  currentAssigneeId: string | null;
 }) {
   const { toast } = useToast();
+  const dueDateStr = task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : "";
 
-  const { data: assignees = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
-    queryKey: [`/api/tasks/${task.id}/assignees`],
-    enabled: open,
+  const form = useForm<TaskFormValues>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues: {
+      title:       task.title,
+      description: task.description ?? "",
+      type:        (task.type as typeof TASK_TYPES[number]) ?? "DESIGN",
+      priority:    (task.priority as typeof PRIORITIES[number]) ?? "MEDIUM",
+      dueDate:     dueDateStr,
+      assigneeId:  currentAssigneeId ?? "",
+    },
   });
+
+  // Keep assigneeId in sync if parent data changes while modal is open
+  useEffect(() => {
+    form.setValue("assigneeId", currentAssigneeId ?? "");
+  }, [currentAssigneeId]);
 
   const updateMutation = useMutation({
     mutationFn: async (values: TaskFormValues) => {
@@ -349,13 +374,13 @@ function EditTaskModal({
 
       const res = await apiRequest("PUT", `/api/tasks/${task.id}`, body);
 
-      const currentAssigneeId = assignees[0]?.id ?? null;
-      const newAssigneeId = values.assigneeId || null;
+      const prevAssigneeId = currentAssigneeId;
+      const newAssigneeId  = values.assigneeId || null;
 
-      if (currentAssigneeId && currentAssigneeId !== newAssigneeId) {
-        await apiRequest("DELETE", `/api/tasks/${task.id}/assignees/${currentAssigneeId}`);
+      if (prevAssigneeId && prevAssigneeId !== newAssigneeId) {
+        await apiRequest("DELETE", `/api/tasks/${task.id}/assignees/${prevAssigneeId}`);
       }
-      if (newAssigneeId && newAssigneeId !== currentAssigneeId) {
+      if (newAssigneeId && newAssigneeId !== prevAssigneeId) {
         await apiRequest("POST", `/api/tasks/${task.id}/assignees`, { userId: newAssigneeId });
       }
 
@@ -363,7 +388,7 @@ function EditTaskModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/assignees`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/task-assignees`] });
       toast({ title: "Task updated" });
       onClose();
     },
@@ -372,28 +397,77 @@ function EditTaskModal({
     },
   });
 
-  const dueDateStr = task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : "";
-
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Edit task</DialogTitle></DialogHeader>
-        <TaskForm
-          defaultValues={{
-            title:       task.title,
-            description: task.description ?? "",
-            type:        (task.type as typeof TASK_TYPES[number]) ?? "DESIGN",
-            priority:    (task.priority as typeof PRIORITIES[number]) ?? "MEDIUM",
-            dueDate:     dueDateStr,
-            assigneeId:  assignees[0]?.id ?? "",
-          }}
-          stageId={task.stageId ?? stages[0]?.id ?? ""}
-          stages={stages}
-          agencyMembers={agencyMembers}
-          onSubmit={(v) => updateMutation.mutate(v)}
-          isPending={updateMutation.isPending}
-          onClose={onClose}
-        />
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => updateMutation.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="title" render={({ field }) => (
+              <FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="Task title…" {...field} /></FormControl></FormItem>
+            )} />
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                <FormControl><Textarea placeholder="Add more context…" rows={3} {...field} /></FormControl>
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="type" render={({ field }) => (
+                <FormItem><FormLabel>Type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>{TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="priority" render={({ field }) => (
+                <FormItem><FormLabel>Priority</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>{PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="assigneeId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Assign to <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                  <Select value={field.value ?? "NONE"} onValueChange={(v) => field.onChange(v === "NONE" ? "" : v)}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="NONE">Unassigned</SelectItem>
+                      {agencyMembers.map((u) => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="dueDate" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Due date <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                  <FormControl><Input type="date" {...field} /></FormControl>
+                </FormItem>
+              )} />
+            </div>
+            <FormItem>
+              <FormLabel>Stage</FormLabel>
+              <Select disabled value={task.stageId ?? stages[0]?.id ?? ""}>
+                <SelectTrigger>
+                  <SelectValue>{stages.find((s) => s.id === (task.stageId ?? stages[0]?.id))?.name ?? ""}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>{stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </FormItem>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
@@ -402,11 +476,11 @@ function EditTaskModal({
 // ─── TaskCard ────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, isDragging, agencyMembers, onEdit,
+  task, isDragging, onEdit, assigneeEntries,
 }: {
   task: Task; isDragging?: boolean;
-  agencyMembers: Pick<User, "id" | "name" | "email" | "image">[];
   onEdit: (task: Task) => void;
+  assigneeEntries: TaskAssigneeEntry[];
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: task.id });
 
@@ -415,11 +489,10 @@ function TaskCard({
   const priority = PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG];
   const type     = TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG];
 
-  const { data: assignees = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
-    queryKey: [`/api/tasks/${task.id}/assignees`],
-  });
-
-  const displayAssignee = assignees[0] ?? agencyMembers.find((u) => u.id === task.createdById) ?? null;
+  const firstAssignee = assigneeEntries[0] ?? null;
+  const displayAssignee = firstAssignee
+    ? { name: firstAssignee.userName, email: firstAssignee.userEmail, image: firstAssignee.userImage }
+    : null;
 
   return (
     <div
@@ -487,12 +560,12 @@ function TaskCard({
 // ─── KanbanColumn ────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, tasks, activeId, onAddTask, agencyMembers, onEdit,
+  stage, tasks, activeId, onAddTask, onEdit, taskAssigneeMap,
 }: {
   stage: ProjectStage; tasks: Task[]; activeId: string | null;
   onAddTask: (stageId: string) => void;
-  agencyMembers: Pick<User, "id" | "name" | "email" | "image">[];
   onEdit: (task: Task) => void;
+  taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const columnColor = stage.color ?? "#6366f1";
@@ -529,7 +602,7 @@ function KanbanColumn({
             key={task.id}
             task={task}
             isDragging={activeId === task.id}
-            agencyMembers={agencyMembers}
+            assigneeEntries={taskAssigneeMap[task.id] ?? []}
             onEdit={onEdit}
           />
         ))}
@@ -602,15 +675,34 @@ export default function Tasks() {
     enabled: !!agencyId,
   });
 
-  // Apply filters — assignee filter checks task.createdById as proxy until full assignee data is loaded
+  // Fetch all task-assignee mappings for the project in one call
+  const { data: projectTaskAssignees = [] } = useQuery<TaskAssigneeEntry[]>({
+    queryKey: [`/api/projects/${effectiveProjectId}/task-assignees`],
+    enabled: !!effectiveProjectId,
+  });
+
+  // Build a map: taskId → TaskAssigneeEntry[]
+  const taskAssigneeMap = useMemo(() => {
+    const map: Record<string, TaskAssigneeEntry[]> = {};
+    projectTaskAssignees.forEach((entry) => {
+      if (!map[entry.taskId]) map[entry.taskId] = [];
+      map[entry.taskId].push(entry);
+    });
+    return map;
+  }, [projectTaskAssignees]);
+
+  // Apply filters — assignee filter uses real task-assignee data
   const filteredTasks = useMemo(() => {
     return allTasks.filter((t) => {
       if (filterPriority !== "ALL" && t.priority !== filterPriority) return false;
       if (filterType     !== "ALL" && t.type     !== filterType)     return false;
-      if (filterAssignee !== "ALL" && t.createdById !== filterAssignee) return false;
+      if (filterAssignee !== "ALL") {
+        const assignees = taskAssigneeMap[t.id] ?? [];
+        if (!assignees.some((a) => a.userId === filterAssignee)) return false;
+      }
       return true;
     });
-  }, [allTasks, filterPriority, filterType, filterAssignee]);
+  }, [allTasks, filterPriority, filterType, filterAssignee, taskAssigneeMap]);
 
   // Group tasks by stage
   const tasksByStage = useMemo(() => {
@@ -790,7 +882,7 @@ export default function Tasks() {
                   tasks={tasksByStage[stage.id] ?? []}
                   activeId={activeId}
                   onAddTask={(stageId) => setCreateModal({ open: true, stageId })}
-                  agencyMembers={agencyMembers}
+                  taskAssigneeMap={taskAssigneeMap}
                   onEdit={setEditTask}
                 />
               ))}
@@ -844,6 +936,7 @@ export default function Tasks() {
           projectId={effectiveProjectId}
           stages={stages}
           agencyMembers={agencyMembers}
+          currentAssigneeId={taskAssigneeMap[editTask.id]?.[0]?.userId ?? null}
         />
       )}
     </div>
