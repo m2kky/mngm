@@ -94,6 +94,8 @@ export default function Team() {
   const queryClient = useQueryClient();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("TEAM_MEMBER");
@@ -223,12 +225,14 @@ export default function Team() {
 
   const filteredMembers = members.filter((m) => {
     const q = search.toLowerCase();
-    return (
+    const matchesSearch =
       !q ||
       m.email.toLowerCase().includes(q) ||
       (m.name ?? "").toLowerCase().includes(q) ||
-      ROLE_LABELS[m.role]?.toLowerCase().includes(q)
-    );
+      ROLE_LABELS[m.role]?.toLowerCase().includes(q);
+    const matchesRole = roleFilter === "ALL" || m.role === roleFilter;
+    const matchesStatus = statusFilter === "ALL" || m.status === statusFilter;
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   const pendingInvites = invitations.filter((i) => i.status === "PENDING");
@@ -262,15 +266,57 @@ export default function Team() {
               )}
             </div>
 
-            {/* Search */}
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search members..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 bg-white/70 dark:bg-slate-800/70"
-              />
+            {/* Search + filters */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search members..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10 bg-white/70 dark:bg-slate-800/70"
+                />
+              </div>
+
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-44 bg-white/70 dark:bg-slate-800/70">
+                  <SelectValue placeholder="All roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All roles</SelectItem>
+                  <SelectItem value="OWNER">Owner</SelectItem>
+                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="TEAM_LEADER">Team Leader</SelectItem>
+                  <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
+                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                  <SelectItem value="HR">HR</SelectItem>
+                  <SelectItem value="PROJECT_MANAGER">Project Manager</SelectItem>
+                  <SelectItem value="TEAM_MEMBER">Team Member</SelectItem>
+                  <SelectItem value="CLIENT">Client</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-36 bg-white/70 dark:bg-slate-800/70">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All statuses</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="DEACTIVATED">Deactivated</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {(roleFilter !== "ALL" || statusFilter !== "ALL" || search) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setSearch(""); setRoleFilter("ALL"); setStatusFilter("ALL"); }}
+                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  Clear filters
+                </Button>
+              )}
             </div>
 
             {/* Members table */}
