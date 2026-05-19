@@ -33,7 +33,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Login />;
   }
 
-  if (!userProfile?.workspaceId) {
+  if (!userProfile?.agencyId) {
     return <Onboarding />;
   }
 

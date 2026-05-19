@@ -2,15 +2,35 @@ import { useState, useEffect, useCallback } from "react";
 import { collection, addDoc, query, where, orderBy, limit, getDocs, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
-import { Timer, InsertTimer } from "@shared/schema";
+
+interface TimerState {
+  id: string;
+  userId: string;
+  taskId: string | null;
+  agencyId: string | null;
+  startTime: Date;
+  endTime: Date | null;
+  durationSeconds: number;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+interface InsertTimerState {
+  userId: string;
+  taskId: string | null;
+  agencyId: string | null;
+  startTime: Date;
+  endTime: Date | null;
+  durationSeconds: number;
+  isActive: boolean;
+}
 
 export function useTimer() {
   const { userProfile } = useAuth();
-  const [activeTimer, setActiveTimer] = useState<Timer | null>(null);
+  const [activeTimer, setActiveTimer] = useState<TimerState | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Load active timer on mount
   useEffect(() => {
     if (!userProfile || !db) return;
 
@@ -23,26 +43,29 @@ export function useTimer() {
           orderBy("createdAt", "desc"),
           limit(1)
         );
-        
+
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
           const timerDoc = querySnapshot.docs[0];
-          const timerData = {
-            ...timerDoc.data(),
+          const data = timerDoc.data();
+          const timerData: TimerState = {
             id: timerDoc.id,
-            startTime: timerDoc.data().startTime?.toDate(),
-            endTime: timerDoc.data().endTime?.toDate(),
-            createdAt: timerDoc.data().createdAt?.toDate(),
-          } as Timer;
-          
+            userId: data.userId,
+            taskId: data.taskId ?? null,
+            agencyId: data.agencyId ?? null,
+            startTime: data.startTime?.toDate() ?? new Date(),
+            endTime: data.endTime?.toDate() ?? null,
+            durationSeconds: data.durationSeconds ?? 1500,
+            isActive: data.isActive ?? true,
+            createdAt: data.createdAt?.toDate() ?? new Date(),
+          };
+
           setActiveTimer(timerData);
-          
-          // Calculate remaining time
+
           const now = new Date();
           const elapsed = Math.floor((now.getTime() - timerData.startTime.getTime()) / 1000);
-          const duration = timerData.duration || 1500;
-          const remaining = Math.max(0, duration - elapsed);
-          
+          const remaining = Math.max(0, timerData.durationSeconds - elapsed);
+
           setTimeLeft(remaining);
           setIsRunning(remaining > 0);
         }
@@ -54,12 +77,11 @@ export function useTimer() {
     loadActiveTimer();
   }, [userProfile]);
 
-  // Timer countdown effect
   useEffect(() => {
     if (!isRunning || timeLeft <= 0) return;
 
     const interval = setInterval(() => {
-      setTimeLeft(prev => {
+      setTimeLeft((prev) => {
         if (prev <= 1) {
           setIsRunning(false);
           return 0;
@@ -71,39 +93,41 @@ export function useTimer() {
     return () => clearInterval(interval);
   }, [isRunning, timeLeft]);
 
-  const startTimer = useCallback(async (taskId?: string, duration: number = 1500) => {
-    if (!userProfile || !db) return;
+  const startTimer = useCallback(
+    async (taskId?: string, durationSeconds: number = 1500) => {
+      if (!userProfile || !db) return;
 
-    try {
-      const timerData: InsertTimer = {
-        userId: userProfile.id,
-        taskId: taskId || null,
-        startTime: new Date(),
-        endTime: null,
-        duration,
-        isActive: true,
-        workspaceId: userProfile.workspaceId,
-      };
+      try {
+        const timerData: InsertTimerState = {
+          userId: userProfile.id,
+          taskId: taskId ?? null,
+          agencyId: userProfile.agencyId ?? null,
+          startTime: new Date(),
+          endTime: null,
+          durationSeconds,
+          isActive: true,
+        };
 
-      const docRef = await addDoc(collection(db!, "timers"), {
-        ...timerData,
-        createdAt: new Date(),
-      });
+        const docRef = await addDoc(collection(db!, "timers"), {
+          ...timerData,
+          createdAt: new Date(),
+        });
 
-      const newTimer: Timer = {
-        ...timerData,
-        id: docRef.id,
-        endTime: null,
-        createdAt: new Date(),
-      };
+        const newTimer: TimerState = {
+          ...timerData,
+          id: docRef.id,
+          createdAt: new Date(),
+        };
 
-      setActiveTimer(newTimer);
-      setTimeLeft(duration);
-      setIsRunning(true);
-    } catch (error) {
-      console.error("Error starting timer:", error);
-    }
-  }, [userProfile]);
+        setActiveTimer(newTimer);
+        setTimeLeft(durationSeconds);
+        setIsRunning(true);
+      } catch (error) {
+        console.error("Error starting timer:", error);
+      }
+    },
+    [userProfile]
+  );
 
   const stopTimer = useCallback(async () => {
     if (!activeTimer || !userProfile || !db) return;
@@ -114,7 +138,7 @@ export function useTimer() {
 
       await updateDoc(doc(db!, "timers", activeTimer.id), {
         endTime,
-        duration: actualDuration,
+        durationSeconds: actualDuration,
         isActive: false,
       });
 
@@ -139,7 +163,7 @@ export function useTimer() {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   return {
@@ -150,6 +174,6 @@ export function useTimer() {
     stopTimer,
     pauseTimer,
     resumeTimer,
-    formatTime
+    formatTime,
   };
 }

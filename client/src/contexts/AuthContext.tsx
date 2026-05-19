@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { 
+import {
   User as FirebaseUser,
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -59,19 +59,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      
-      if (user && db) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setCurrentUser(firebaseUser);
+
+      if (firebaseUser && db) {
         try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
           if (userDoc.exists()) {
-            const userData = userDoc.data();
+            const data = userDoc.data();
             setUserProfile({
-              ...userData,
-              id: user.uid,
-              createdAt: userData.createdAt?.toDate() || new Date(),
-              updatedAt: userData.updatedAt?.toDate() || new Date(),
+              id: firebaseUser.uid,
+              name: data.name ?? null,
+              email: firebaseUser.email ?? data.email ?? "",
+              emailVerified: firebaseUser.emailVerified,
+              image: data.image ?? data.profilePicture ?? null,
+              status: data.status ?? "ACTIVE",
+              language: data.language ?? "en",
+              theme: data.theme ?? "system",
+              lastLoginAt: data.lastLoginAt?.toDate() ?? null,
+              role: data.role ?? "TEAM_MEMBER",
+              agencyId: data.agencyId ?? data.workspaceId ?? null,
+              createdAt: data.createdAt?.toDate() ?? new Date(),
+              updatedAt: data.updatedAt?.toDate() ?? new Date(),
             } as User);
           }
         } catch (error) {
@@ -80,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUserProfile(null);
       }
-      
+
       setLoading(false);
     });
 
@@ -94,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     firebaseReady: firebaseConfigured,
     signIn,
     signInWithGoogle,
-    logout
+    logout,
   };
 
   return (

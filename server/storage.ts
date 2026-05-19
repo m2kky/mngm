@@ -1,21 +1,16 @@
 import { randomUUID } from "crypto";
-import { 
-  User, InsertUser, 
-  Workspace, InsertWorkspace,
-  Task, InsertTask,
-  Attendance, InsertAttendance,
-  DailyReport, InsertDailyReport,
-  Timer, InsertTimer,
-  Notification, InsertNotification,
-  Page, InsertPage,
-  File, InsertFile,
-  Message, InsertMessage,
-  Channel, InsertChannel,
+import {
+  User, InsertUser,
+  Agency, InsertAgency,
+  Client, InsertClient,
   Project, InsertProject,
-  Evaluation, InsertEvaluation,
-  TaskStatus,
-  AttendanceStatus,
-  UserRoleType
+  Task, InsertTask,
+  TimeEntry, InsertTimeEntry,
+  Notification, InsertNotification,
+  TaskComment, InsertTaskComment,
+  FileAsset, InsertFileAsset,
+  Invitation, InsertInvitation,
+  ProjectStage, InsertProjectStage,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -24,92 +19,75 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined>;
-  getWorkspaceUsers(workspaceId: string): Promise<User[]>;
+  getAgencyUsers(agencyId: string): Promise<User[]>;
 
-  // Workspace methods
-  getWorkspace(id: string): Promise<Workspace | undefined>;
-  createWorkspace(workspace: InsertWorkspace): Promise<Workspace>;
-  updateWorkspace(id: string, updates: Partial<InsertWorkspace>): Promise<Workspace | undefined>;
+  // Agency methods
+  getAgency(id: string): Promise<Agency | undefined>;
+  createAgency(agency: InsertAgency): Promise<Agency>;
+  updateAgency(id: string, updates: Partial<InsertAgency>): Promise<Agency | undefined>;
+
+  // Client methods
+  getClients(filters: { agencyId?: string; status?: string }): Promise<Client[]>;
+  getClient(id: string): Promise<Client | undefined>;
+  createClient(client: InsertClient): Promise<Client>;
+  updateClient(id: string, updates: Partial<InsertClient>): Promise<Client | undefined>;
+  deleteClient(id: string): Promise<boolean>;
+
+  // Project methods
+  getProjects(filters: { agencyId?: string; clientId?: string; status?: string }): Promise<Project[]>;
+  getProject(id: string): Promise<Project | undefined>;
+  createProject(project: InsertProject): Promise<Project>;
+  updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined>;
+
+  // Project Stage methods
+  getProjectStages(projectId: string): Promise<ProjectStage[]>;
+  createProjectStage(stage: InsertProjectStage): Promise<ProjectStage>;
 
   // Task methods
-  getTasks(filters: { workspaceId?: string; assignedTo?: string; status?: string }): Promise<Task[]>;
+  getTasks(filters: { agencyId?: string; projectId?: string; stageId?: string; createdById?: string }): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, updates: Partial<InsertTask>): Promise<Task | undefined>;
   deleteTask(id: string): Promise<boolean>;
 
-  // Timer methods
-  getTimers(filters: { userId?: string; isActive?: boolean }): Promise<Timer[]>;
-  createTimer(timer: InsertTimer): Promise<Timer>;
-  updateTimer(id: string, updates: Partial<InsertTimer>): Promise<Timer | undefined>;
+  // Time Entry methods
+  getTimeEntries(filters: { agencyId?: string; userId?: string; projectId?: string; taskId?: string }): Promise<TimeEntry[]>;
+  createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
+  updateTimeEntry(id: string, updates: Partial<InsertTimeEntry>): Promise<TimeEntry | undefined>;
 
-  // Attendance methods
-  getAttendance(filters: { userId?: string; workspaceId?: string; date?: Date }): Promise<Attendance[]>;
-  createAttendance(attendance: InsertAttendance): Promise<Attendance>;
-  updateAttendance(id: string, updates: Partial<InsertAttendance>): Promise<Attendance | undefined>;
+  // Task Comment methods
+  getTaskComments(taskId: string): Promise<TaskComment[]>;
+  createTaskComment(comment: InsertTaskComment): Promise<TaskComment>;
 
-  // Daily Reports methods
-  getDailyReports(filters: { userId?: string; workspaceId?: string; date?: Date }): Promise<DailyReport[]>;
-  createDailyReport(report: InsertDailyReport): Promise<DailyReport>;
-
-  // Page methods
-  getPages(filters: { workspaceId?: string; teamId?: string; createdBy?: string }): Promise<Page[]>;
-  getPage(id: string): Promise<Page | undefined>;
-  createPage(page: InsertPage): Promise<Page>;
-  updatePage(id: string, updates: Partial<InsertPage>): Promise<Page | undefined>;
-  deletePage(id: string): Promise<boolean>;
-
-  // File methods
-  getFiles(filters: { workspaceId?: string; uploadedBy?: string; fileType?: string }): Promise<File[]>;
-  createFile(file: InsertFile): Promise<File>;
-
-  // Message and Channel methods
-  getChannels(filters: { workspaceId?: string; teamId?: string }): Promise<Channel[]>;
-  createChannel(channel: InsertChannel): Promise<Channel>;
-  getChannelMessages(channelId: string): Promise<Message[]>;
-  createMessage(message: InsertMessage): Promise<Message>;
-
-  // Project methods
-  getProjects(filters: { workspaceId?: string; teamId?: string; clientId?: string }): Promise<Project[]>;
-  createProject(project: InsertProject): Promise<Project>;
-
-  // Evaluation methods
-  getEvaluations(filters: { userId?: string; workspaceId?: string; period?: string }): Promise<Evaluation[]>;
-  createEvaluation(evaluation: InsertEvaluation): Promise<Evaluation>;
+  // File Asset methods
+  getFileAssets(filters: { agencyId?: string; projectId?: string; taskId?: string; clientId?: string }): Promise<FileAsset[]>;
+  createFileAsset(file: InsertFileAsset): Promise<FileAsset>;
 
   // Notification methods
-  getNotifications(filters: { userId?: string; isRead?: boolean }): Promise<Notification[]>;
+  getNotifications(filters: { userId?: string; agencyId?: string; readAt?: boolean }): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  updateNotification(id: string, updates: Partial<InsertNotification>): Promise<Notification | undefined>;
+  markNotificationRead(id: string): Promise<Notification | undefined>;
+
+  // Invitation methods
+  getInvitations(agencyId: string): Promise<Invitation[]>;
+  createInvitation(invitation: InsertInvitation): Promise<Invitation>;
 
   // Dashboard methods
-  getDashboardStats(filters: { workspaceId: string; userId?: string }): Promise<any>;
-  getRecentActivity(filters: { workspaceId: string; limit?: number }): Promise<any[]>;
+  getDashboardStats(filters: { agencyId: string; userId?: string }): Promise<any>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User> = new Map();
-  private workspaces: Map<string, Workspace> = new Map();
-  private tasks: Map<string, Task> = new Map();
-  private timers: Map<string, Timer> = new Map();
-  private attendance: Map<string, Attendance> = new Map();
-  private dailyReports: Map<string, DailyReport> = new Map();
-  private pages: Map<string, Page> = new Map();
-  private files: Map<string, File> = new Map();
-  private messages: Map<string, Message> = new Map();
-  private channels: Map<string, Channel> = new Map();
+  private agencies: Map<string, Agency> = new Map();
+  private clients: Map<string, Client> = new Map();
   private projects: Map<string, Project> = new Map();
-  private evaluations: Map<string, Evaluation> = new Map();
+  private projectStages: Map<string, ProjectStage> = new Map();
+  private tasks: Map<string, Task> = new Map();
+  private timeEntries: Map<string, TimeEntry> = new Map();
+  private taskComments: Map<string, TaskComment> = new Map();
+  private fileAssets: Map<string, FileAsset> = new Map();
   private notifications: Map<string, Notification> = new Map();
-
-  constructor() {
-    this.initializeSampleData();
-  }
-
-  private initializeSampleData() {
-    // This method will be empty in production - no mock data
-    // All data should come from real Firebase connections
-  }
+  private invitations: Map<string, Invitation> = new Map();
 
   // User methods
   async getUser(id: string): Promise<User | undefined> {
@@ -117,76 +95,213 @@ export class MemStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.email === email);
+    return Array.from(this.users.values()).find(u => u.email === email);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
     const now = new Date();
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
+    const user: User = {
+      id: randomUUID(),
+      name: null,
+      image: null,
+      lastLoginAt: null,
+      agencyId: null,
+      ...insertUser,
+      emailVerified: insertUser.emailVerified ?? false,
+      status: insertUser.status ?? "ACTIVE",
+      language: insertUser.language ?? "en",
+      theme: insertUser.theme ?? "system",
+      role: insertUser.role ?? "TEAM_MEMBER",
+      createdAt: now,
+      updatedAt: now,
     };
-    this.users.set(id, user);
+    this.users.set(user.id, user);
     return user;
   }
 
   async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    
-    const updatedUser: User = { 
-      ...user, 
-      ...updates, 
-      updatedAt: new Date() 
-    };
-    this.users.set(id, updatedUser);
-    return updatedUser;
+    const updated: User = { ...user, ...updates, updatedAt: new Date() };
+    this.users.set(id, updated);
+    return updated;
   }
 
-  async getWorkspaceUsers(workspaceId: string): Promise<User[]> {
-    return Array.from(this.users.values()).filter(user => user.workspaceId === workspaceId);
+  async getAgencyUsers(agencyId: string): Promise<User[]> {
+    return Array.from(this.users.values()).filter(u => u.agencyId === agencyId);
   }
 
-  // Workspace methods
-  async getWorkspace(id: string): Promise<Workspace | undefined> {
-    return this.workspaces.get(id);
+  // Agency methods
+  async getAgency(id: string): Promise<Agency | undefined> {
+    return this.agencies.get(id);
   }
 
-  async createWorkspace(insertWorkspace: InsertWorkspace): Promise<Workspace> {
-    const id = randomUUID();
+  async createAgency(insertAgency: InsertAgency): Promise<Agency> {
     const now = new Date();
-    const workspace: Workspace = { 
-      ...insertWorkspace, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
+    const agency: Agency = {
+      id: randomUUID(),
+      slug: null,
+      logo: null,
+      ownerId: null,
+      ...insertAgency,
+      plan: insertAgency.plan ?? "FREE",
+      onboardingCompleted: insertAgency.onboardingCompleted ?? false,
+      workingDays: insertAgency.workingDays ?? [0, 1, 2, 3, 4],
+      workingHoursStart: insertAgency.workingHoursStart ?? "09:00",
+      workingHoursEnd: insertAgency.workingHoursEnd ?? "17:00",
+      timezone: insertAgency.timezone ?? "Africa/Cairo",
+      currency: insertAgency.currency ?? "EGP",
+      locale: insertAgency.locale ?? "ar-EG",
+      createdAt: now,
+      updatedAt: now,
     };
-    this.workspaces.set(id, workspace);
-    return workspace;
+    this.agencies.set(agency.id, agency);
+    return agency;
   }
 
-  async updateWorkspace(id: string, updates: Partial<InsertWorkspace>): Promise<Workspace | undefined> {
-    const workspace = this.workspaces.get(id);
-    if (!workspace) return undefined;
-    
-    const updatedWorkspace: Workspace = { 
-      ...workspace, 
-      ...updates, 
-      updatedAt: new Date() 
+  async updateAgency(id: string, updates: Partial<InsertAgency>): Promise<Agency | undefined> {
+    const agency = this.agencies.get(id);
+    if (!agency) return undefined;
+    const updated: Agency = { ...agency, ...updates, updatedAt: new Date() };
+    this.agencies.set(id, updated);
+    return updated;
+  }
+
+  // Client methods
+  async getClients(filters: { agencyId?: string; status?: string }): Promise<Client[]> {
+    return Array.from(this.clients.values()).filter(c => {
+      if (filters.agencyId && c.agencyId !== filters.agencyId) return false;
+      if (filters.status && c.status !== filters.status) return false;
+      return true;
+    });
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    return this.clients.get(id);
+  }
+
+  async createClient(insertClient: InsertClient): Promise<Client> {
+    const now = new Date();
+    const client: Client = {
+      id: randomUUID(),
+      slug: null,
+      industry: null,
+      website: null,
+      logo: null,
+      coverImage: null,
+      iconEmoji: null,
+      iconColor: null,
+      notes: null,
+      contractType: null,
+      monthlyBudget: null,
+      hourlyRate: null,
+      createdById: null,
+      archivedAt: null,
+      deletedAt: null,
+      ...insertClient,
+      status: insertClient.status ?? "ACTIVE",
+      healthScore: insertClient.healthScore ?? 0,
+      portalEnabled: insertClient.portalEnabled ?? false,
+      createdAt: now,
+      updatedAt: now,
     };
-    this.workspaces.set(id, updatedWorkspace);
-    return updatedWorkspace;
+    this.clients.set(client.id, client);
+    return client;
+  }
+
+  async updateClient(id: string, updates: Partial<InsertClient>): Promise<Client | undefined> {
+    const client = this.clients.get(id);
+    if (!client) return undefined;
+    const updated: Client = { ...client, ...updates, updatedAt: new Date() };
+    this.clients.set(id, updated);
+    return updated;
+  }
+
+  async deleteClient(id: string): Promise<boolean> {
+    return this.clients.delete(id);
+  }
+
+  // Project methods
+  async getProjects(filters: { agencyId?: string; clientId?: string; status?: string }): Promise<Project[]> {
+    return Array.from(this.projects.values()).filter(p => {
+      if (filters.agencyId && p.agencyId !== filters.agencyId) return false;
+      if (filters.clientId && p.clientId !== filters.clientId) return false;
+      if (filters.status && p.status !== filters.status) return false;
+      return true;
+    });
+  }
+
+  async getProject(id: string): Promise<Project | undefined> {
+    return this.projects.get(id);
+  }
+
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const now = new Date();
+    const project: Project = {
+      id: randomUUID(),
+      description: null,
+      startDate: null,
+      dueDate: null,
+      completedAt: null,
+      budgetHours: null,
+      budgetAmount: null,
+      coverImage: null,
+      iconEmoji: null,
+      iconColor: null,
+      createdById: null,
+      archivedAt: null,
+      deletedAt: null,
+      ...insertProject,
+      type: insertProject.type ?? "ONE_TIME",
+      status: insertProject.status ?? "PLANNING",
+      priority: insertProject.priority ?? "MEDIUM",
+      progress: insertProject.progress ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.projects.set(project.id, project);
+    return project;
+  }
+
+  async updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined> {
+    const project = this.projects.get(id);
+    if (!project) return undefined;
+    const updated: Project = { ...project, ...updates, updatedAt: new Date() };
+    this.projects.set(id, updated);
+    return updated;
+  }
+
+  // Project Stage methods
+  async getProjectStages(projectId: string): Promise<ProjectStage[]> {
+    return Array.from(this.projectStages.values())
+      .filter(s => s.projectId === projectId)
+      .sort((a, b) => a.order - b.order);
+  }
+
+  async createProjectStage(insertStage: InsertProjectStage): Promise<ProjectStage> {
+    const now = new Date();
+    const stage: ProjectStage = {
+      id: randomUUID(),
+      color: null,
+      wipLimit: null,
+      ...insertStage,
+      isDefault: insertStage.isDefault ?? false,
+      isDone: insertStage.isDone ?? false,
+      isClientReview: insertStage.isClientReview ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.projectStages.set(stage.id, stage);
+    return stage;
   }
 
   // Task methods
-  async getTasks(filters: { workspaceId?: string; assignedTo?: string; status?: string }): Promise<Task[]> {
-    return Array.from(this.tasks.values()).filter(task => {
-      if (filters.workspaceId && task.workspaceId !== filters.workspaceId) return false;
-      if (filters.assignedTo && task.assignedTo !== filters.assignedTo) return false;
-      if (filters.status && task.status !== filters.status) return false;
+  async getTasks(filters: { agencyId?: string; projectId?: string; stageId?: string; createdById?: string }): Promise<Task[]> {
+    return Array.from(this.tasks.values()).filter(t => {
+      if (filters.agencyId && t.agencyId !== filters.agencyId) return false;
+      if (filters.projectId && t.projectId !== filters.projectId) return false;
+      if (filters.stageId && t.stageId !== filters.stageId) return false;
+      if (filters.createdById && t.createdById !== filters.createdById) return false;
       return true;
     });
   }
@@ -196,351 +311,230 @@ export class MemStorage implements IStorage {
   }
 
   async createTask(insertTask: InsertTask): Promise<Task> {
-    const id = randomUUID();
     const now = new Date();
-    const task: Task = { 
-      ...insertTask, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
+    const task: Task = {
+      id: randomUUID(),
+      description: null,
+      startDate: null,
+      dueDate: null,
+      completedAt: null,
+      approvedAt: null,
+      rejectedAt: null,
+      estimatedMinutes: null,
+      coverImage: null,
+      iconEmoji: null,
+      iconColor: null,
+      reviewerId: null,
+      archivedAt: null,
+      deletedAt: null,
+      ...insertTask,
+      type: insertTask.type ?? "DESIGN",
+      priority: insertTask.priority ?? "MEDIUM",
+      reviewStatus: insertTask.reviewStatus ?? "NOT_REQUIRED",
+      actualMinutes: insertTask.actualMinutes ?? 0,
+      position: insertTask.position ?? 0,
+      createdAt: now,
+      updatedAt: now,
     };
-    this.tasks.set(id, task);
+    this.tasks.set(task.id, task);
     return task;
   }
 
   async updateTask(id: string, updates: Partial<InsertTask>): Promise<Task | undefined> {
     const task = this.tasks.get(id);
     if (!task) return undefined;
-    
-    const updatedTask: Task = { 
-      ...task, 
-      ...updates, 
-      updatedAt: new Date() 
-    };
-    this.tasks.set(id, updatedTask);
-    return updatedTask;
+    const updated: Task = { ...task, ...updates, updatedAt: new Date() };
+    this.tasks.set(id, updated);
+    return updated;
   }
 
   async deleteTask(id: string): Promise<boolean> {
     return this.tasks.delete(id);
   }
 
-  // Timer methods
-  async getTimers(filters: { userId?: string; isActive?: boolean }): Promise<Timer[]> {
-    return Array.from(this.timers.values()).filter(timer => {
-      if (filters.userId && timer.userId !== filters.userId) return false;
-      if (filters.isActive !== undefined && timer.isActive !== filters.isActive) return false;
+  // Time Entry methods
+  async getTimeEntries(filters: { agencyId?: string; userId?: string; projectId?: string; taskId?: string }): Promise<TimeEntry[]> {
+    return Array.from(this.timeEntries.values()).filter(e => {
+      if (filters.agencyId && e.agencyId !== filters.agencyId) return false;
+      if (filters.userId && e.userId !== filters.userId) return false;
+      if (filters.projectId && e.projectId !== filters.projectId) return false;
+      if (filters.taskId && e.taskId !== filters.taskId) return false;
       return true;
     });
   }
 
-  async createTimer(insertTimer: InsertTimer): Promise<Timer> {
-    const id = randomUUID();
-    const timer: Timer = { 
-      ...insertTimer, 
-      id, 
+  async createTimeEntry(insertEntry: InsertTimeEntry): Promise<TimeEntry> {
+    const now = new Date();
+    const entry: TimeEntry = {
+      id: randomUUID(),
+      clientId: null,
+      taskId: null,
       endTime: null,
-      duration: 0,
-      createdAt: new Date() 
+      durationMinutes: null,
+      note: null,
+      editedAt: null,
+      deletedAt: null,
+      ...insertEntry,
+      billable: insertEntry.billable ?? true,
+      source: insertEntry.source ?? "MANUAL",
+      createdAt: now,
+      updatedAt: now,
     };
-    this.timers.set(id, timer);
-    return timer;
+    this.timeEntries.set(entry.id, entry);
+    return entry;
   }
 
-  async updateTimer(id: string, updates: Partial<InsertTimer>): Promise<Timer | undefined> {
-    const timer = this.timers.get(id);
-    if (!timer) return undefined;
-    
-    const updatedTimer: Timer = { ...timer, ...updates };
-    this.timers.set(id, updatedTimer);
-    return updatedTimer;
+  async updateTimeEntry(id: string, updates: Partial<InsertTimeEntry>): Promise<TimeEntry | undefined> {
+    const entry = this.timeEntries.get(id);
+    if (!entry) return undefined;
+    const updated: TimeEntry = { ...entry, ...updates, updatedAt: new Date() };
+    this.timeEntries.set(id, updated);
+    return updated;
   }
 
-  // Attendance methods
-  async getAttendance(filters: { userId?: string; workspaceId?: string; date?: Date }): Promise<Attendance[]> {
-    return Array.from(this.attendance.values()).filter(attendance => {
-      if (filters.userId && attendance.userId !== filters.userId) return false;
-      if (filters.workspaceId && attendance.workspaceId !== filters.workspaceId) return false;
-      if (filters.date && attendance.date.toDateString() !== filters.date.toDateString()) return false;
-      return true;
-    });
-  }
-
-  async createAttendance(insertAttendance: InsertAttendance): Promise<Attendance> {
-    const id = randomUUID();
-    const now = new Date();
-    const attendance: Attendance = { 
-      ...insertAttendance, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
-    };
-    this.attendance.set(id, attendance);
-    return attendance;
-  }
-
-  async updateAttendance(id: string, updates: Partial<InsertAttendance>): Promise<Attendance | undefined> {
-    const attendance = this.attendance.get(id);
-    if (!attendance) return undefined;
-    
-    const updatedAttendance: Attendance = { 
-      ...attendance, 
-      ...updates, 
-      updatedAt: new Date() 
-    };
-    this.attendance.set(id, updatedAttendance);
-    return updatedAttendance;
-  }
-
-  // Daily Reports methods
-  async getDailyReports(filters: { userId?: string; workspaceId?: string; date?: Date }): Promise<DailyReport[]> {
-    return Array.from(this.dailyReports.values()).filter(report => {
-      if (filters.userId && report.userId !== filters.userId) return false;
-      if (filters.workspaceId && report.workspaceId !== filters.workspaceId) return false;
-      if (filters.date && report.date.toDateString() !== filters.date.toDateString()) return false;
-      return true;
-    });
-  }
-
-  async createDailyReport(insertReport: InsertDailyReport): Promise<DailyReport> {
-    const id = randomUUID();
-    const report: DailyReport = { 
-      ...insertReport, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.dailyReports.set(id, report);
-    return report;
-  }
-
-  // Page methods
-  async getPages(filters: { workspaceId?: string; teamId?: string; createdBy?: string }): Promise<Page[]> {
-    return Array.from(this.pages.values()).filter(page => {
-      if (filters.workspaceId && page.workspaceId !== filters.workspaceId) return false;
-      if (filters.teamId && page.teamId !== filters.teamId) return false;
-      if (filters.createdBy && page.createdBy !== filters.createdBy) return false;
-      return true;
-    });
-  }
-
-  async getPage(id: string): Promise<Page | undefined> {
-    return this.pages.get(id);
-  }
-
-  async createPage(insertPage: InsertPage): Promise<Page> {
-    const id = randomUUID();
-    const now = new Date();
-    const page: Page = { 
-      ...insertPage, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
-    };
-    this.pages.set(id, page);
-    return page;
-  }
-
-  async updatePage(id: string, updates: Partial<InsertPage>): Promise<Page | undefined> {
-    const page = this.pages.get(id);
-    if (!page) return undefined;
-    
-    const updatedPage: Page = { 
-      ...page, 
-      ...updates, 
-      updatedAt: new Date() 
-    };
-    this.pages.set(id, updatedPage);
-    return updatedPage;
-  }
-
-  async deletePage(id: string): Promise<boolean> {
-    return this.pages.delete(id);
-  }
-
-  // File methods
-  async getFiles(filters: { workspaceId?: string; uploadedBy?: string; fileType?: string }): Promise<File[]> {
-    return Array.from(this.files.values()).filter(file => {
-      if (filters.workspaceId && file.workspaceId !== filters.workspaceId) return false;
-      if (filters.uploadedBy && file.uploadedBy !== filters.uploadedBy) return false;
-      if (filters.fileType && file.fileType !== filters.fileType) return false;
-      return true;
-    });
-  }
-
-  async createFile(insertFile: InsertFile): Promise<File> {
-    const id = randomUUID();
-    const file: File = { 
-      ...insertFile, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.files.set(id, file);
-    return file;
-  }
-
-  // Message and Channel methods
-  async getChannels(filters: { workspaceId?: string; teamId?: string }): Promise<Channel[]> {
-    return Array.from(this.channels.values()).filter(channel => {
-      if (filters.workspaceId && channel.workspaceId !== filters.workspaceId) return false;
-      if (filters.teamId && channel.teamId !== filters.teamId) return false;
-      return true;
-    });
-  }
-
-  async createChannel(insertChannel: InsertChannel): Promise<Channel> {
-    const id = randomUUID();
-    const now = new Date();
-    const channel: Channel = { 
-      ...insertChannel, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
-    };
-    this.channels.set(id, channel);
-    return channel;
-  }
-
-  async getChannelMessages(channelId: string): Promise<Message[]> {
-    return Array.from(this.messages.values())
-      .filter(message => message.channelId === channelId)
+  // Task Comment methods
+  async getTaskComments(taskId: string): Promise<TaskComment[]> {
+    return Array.from(this.taskComments.values())
+      .filter(c => c.taskId === taskId)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
 
-  async createMessage(insertMessage: InsertMessage): Promise<Message> {
-    const id = randomUUID();
-    const message: Message = { 
-      ...insertMessage, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.messages.set(id, message);
-    return message;
-  }
-
-  // Project methods
-  async getProjects(filters: { workspaceId?: string; teamId?: string; clientId?: string }): Promise<Project[]> {
-    return Array.from(this.projects.values()).filter(project => {
-      if (filters.workspaceId && project.workspaceId !== filters.workspaceId) return false;
-      if (filters.teamId && project.teamId !== filters.teamId) return false;
-      if (filters.clientId && project.clientId !== filters.clientId) return false;
-      return true;
-    });
-  }
-
-  async createProject(insertProject: InsertProject): Promise<Project> {
-    const id = randomUUID();
+  async createTaskComment(insertComment: InsertTaskComment): Promise<TaskComment> {
     const now = new Date();
-    const project: Project = { 
-      ...insertProject, 
-      id, 
-      createdAt: now, 
-      updatedAt: now 
+    const comment: TaskComment = {
+      id: randomUUID(),
+      authorUserId: null,
+      authorClientPortalUserId: null,
+      parentCommentId: null,
+      editedAt: null,
+      deletedAt: null,
+      ...insertComment,
+      authorType: insertComment.authorType ?? "TEAM",
+      mentions: insertComment.mentions ?? [],
+      isClientFeedback: insertComment.isClientFeedback ?? false,
+      createdAt: now,
+      updatedAt: now,
     };
-    this.projects.set(id, project);
-    return project;
+    this.taskComments.set(comment.id, comment);
+    return comment;
   }
 
-  // Evaluation methods
-  async getEvaluations(filters: { userId?: string; workspaceId?: string; period?: string }): Promise<Evaluation[]> {
-    return Array.from(this.evaluations.values()).filter(evaluation => {
-      if (filters.userId && evaluation.userId !== filters.userId) return false;
-      if (filters.workspaceId && evaluation.workspaceId !== filters.workspaceId) return false;
-      if (filters.period && evaluation.period !== filters.period) return false;
+  // File Asset methods
+  async getFileAssets(filters: { agencyId?: string; projectId?: string; taskId?: string; clientId?: string }): Promise<FileAsset[]> {
+    return Array.from(this.fileAssets.values()).filter(f => {
+      if (filters.agencyId && f.agencyId !== filters.agencyId) return false;
+      if (filters.projectId && f.projectId !== filters.projectId) return false;
+      if (filters.taskId && f.taskId !== filters.taskId) return false;
+      if (filters.clientId && f.clientId !== filters.clientId) return false;
       return true;
     });
   }
 
-  async createEvaluation(insertEvaluation: InsertEvaluation): Promise<Evaluation> {
-    const id = randomUUID();
-    const evaluation: Evaluation = { 
-      ...insertEvaluation, 
-      id, 
-      createdAt: new Date() 
+  async createFileAsset(insertFile: InsertFileAsset): Promise<FileAsset> {
+    const now = new Date();
+    const file: FileAsset = {
+      id: randomUUID(),
+      clientId: null,
+      projectId: null,
+      taskId: null,
+      commentId: null,
+      brandKitId: null,
+      strategyId: null,
+      uploadedById: null,
+      uploadedByClientPortalUserId: null,
+      thumbnailUrl: null,
+      checksum: null,
+      folder: null,
+      metadata: null,
+      deletedAt: null,
+      ...insertFile,
+      context: insertFile.context ?? "GENERAL",
+      createdAt: now,
+      updatedAt: now,
     };
-    this.evaluations.set(id, evaluation);
-    return evaluation;
+    this.fileAssets.set(file.id, file);
+    return file;
   }
 
   // Notification methods
-  async getNotifications(filters: { userId?: string; isRead?: boolean }): Promise<Notification[]> {
+  async getNotifications(filters: { userId?: string; agencyId?: string; readAt?: boolean }): Promise<Notification[]> {
     return Array.from(this.notifications.values())
-      .filter(notification => {
-        if (filters.userId && notification.userId !== filters.userId) return false;
-        if (filters.isRead !== undefined && notification.isRead !== filters.isRead) return false;
+      .filter(n => {
+        if (filters.userId && n.userId !== filters.userId) return false;
+        if (filters.agencyId && n.agencyId !== filters.agencyId) return false;
+        if (filters.readAt !== undefined) {
+          if (filters.readAt && !n.readAt) return false;
+          if (!filters.readAt && n.readAt) return false;
+        }
         return true;
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
-    const id = randomUUID();
-    const notification: Notification = { 
-      ...insertNotification, 
-      id, 
-      createdAt: new Date() 
+  async createNotification(insertNotif: InsertNotification): Promise<Notification> {
+    const notification: Notification = {
+      id: randomUUID(),
+      userId: null,
+      clientPortalUserId: null,
+      body: null,
+      actorUserId: null,
+      actorClientPortalUserId: null,
+      entityType: null,
+      entityId: null,
+      deepLink: null,
+      readAt: null,
+      archivedAt: null,
+      ...insertNotif,
+      channel: insertNotif.channel ?? "IN_APP",
+      createdAt: new Date(),
     };
-    this.notifications.set(id, notification);
+    this.notifications.set(notification.id, notification);
     return notification;
   }
 
-  async updateNotification(id: string, updates: Partial<InsertNotification>): Promise<Notification | undefined> {
-    const notification = this.notifications.get(id);
-    if (!notification) return undefined;
-    
-    const updatedNotification: Notification = { ...notification, ...updates };
-    this.notifications.set(id, updatedNotification);
-    return updatedNotification;
+  async markNotificationRead(id: string): Promise<Notification | undefined> {
+    const n = this.notifications.get(id);
+    if (!n) return undefined;
+    const updated: Notification = { ...n, readAt: new Date() };
+    this.notifications.set(id, updated);
+    return updated;
+  }
+
+  // Invitation methods
+  async getInvitations(agencyId: string): Promise<Invitation[]> {
+    return Array.from(this.invitations.values()).filter(i => i.agencyId === agencyId);
+  }
+
+  async createInvitation(insertInv: InsertInvitation): Promise<Invitation> {
+    const now = new Date();
+    const invitation: Invitation = {
+      id: randomUUID(),
+      userId: null,
+      acceptedAt: null,
+      revokedAt: null,
+      ...insertInv,
+      status: insertInv.status ?? "PENDING",
+      role: insertInv.role ?? "TEAM_MEMBER",
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.invitations.set(invitation.id, invitation);
+    return invitation;
   }
 
   // Dashboard methods
-  async getDashboardStats(filters: { workspaceId: string; userId?: string }): Promise<any> {
-    const workspaceTasks = Array.from(this.tasks.values()).filter(task => task.workspaceId === filters.workspaceId);
-    const workspaceUsers = Array.from(this.users.values()).filter(user => user.workspaceId === filters.workspaceId);
-    const today = new Date();
-    const todayAttendance = Array.from(this.attendance.values()).filter(
-      attendance => attendance.workspaceId === filters.workspaceId && 
-      attendance.date.toDateString() === today.toDateString()
-    );
-
-    const activeTasks = workspaceTasks.filter(task => task.status === "in_progress").length;
-    const completedToday = workspaceTasks.filter(task => 
-      task.status === "done" && 
-      task.updatedAt.toDateString() === today.toDateString()
-    ).length;
-    const presentToday = todayAttendance.filter(attendance => attendance.status === "present").length;
-    const totalUsers = workspaceUsers.length;
+  async getDashboardStats(filters: { agencyId: string; userId?: string }): Promise<any> {
+    const agencyTasks = Array.from(this.tasks.values()).filter(t => t.agencyId === filters.agencyId);
+    const agencyProjects = Array.from(this.projects.values()).filter(p => p.agencyId === filters.agencyId);
+    const agencyClients = Array.from(this.clients.values()).filter(c => c.agencyId === filters.agencyId);
 
     return {
-      activeTasks,
-      teamPresent: `${presentToday}/${totalUsers}`,
-      completedToday,
-      timeTracked: "0h" // Calculate from timers in real implementation
+      totalTasks: agencyTasks.length,
+      completedTasks: agencyTasks.filter(t => t.completedAt !== null).length,
+      activeProjects: agencyProjects.filter(p => p.status === "ACTIVE").length,
+      totalClients: agencyClients.length,
+      activeClients: agencyClients.filter(c => c.status === "ACTIVE").length,
     };
-  }
-
-  async getRecentActivity(filters: { workspaceId: string; limit?: number }): Promise<any[]> {
-    const activities: any[] = [];
-    const limit = filters.limit || 10;
-
-    // Collect recent activities from different sources
-    const recentTasks = Array.from(this.tasks.values())
-      .filter(task => task.workspaceId === filters.workspaceId)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-      .slice(0, limit)
-      .map(task => ({
-        id: task.id,
-        type: 'task',
-        action: `updated task "${task.title}"`,
-        userId: task.assignedTo,
-        timestamp: task.updatedAt
-      }));
-
-    activities.push(...recentTasks);
-
-    // Sort by timestamp and limit
-    return activities
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, limit);
   }
 }
 
