@@ -56,6 +56,7 @@ export const users = pgTable("users", {
   status: userStatusEnum("status").notNull().default("ACTIVE"),
   language: text("language").notNull().default("en"),
   theme: text("theme").notNull().default("system"),
+  accentColor: text("accent_color").notNull().default("indigo"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

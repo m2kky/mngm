@@ -263,8 +263,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Agencies ───────────────────────────────────────────────────────────────
 
-  app.get("/api/agencies/:id", requireAuth, async (req, res) => {
+  app.get("/api/agencies/:id", requireAuth, async (req: any, res) => {
     try {
+      const requester = await storage.getUser(req.userId);
+      if (!requester || requester.agencyId !== req.params.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const agency = await storage.getAgency(req.params.id);
       if (!agency) return res.status(404).json({ error: "Agency not found" });
       res.json(agency);
@@ -283,8 +287,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/agencies/:id", requireAuth, async (req, res) => {
+  app.put("/api/agencies/:id", requireAuth, async (req: any, res) => {
     try {
+      const requester = await storage.getUser(req.userId);
+      if (!requester || requester.agencyId !== req.params.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      if (requester.role !== "OWNER" && requester.role !== "ADMIN") {
+        return res.status(403).json({ error: "Only agency owners and admins can update workspace settings." });
+      }
       const data = insertAgencySchema.partial().parse(req.body);
       const agency = await storage.updateAgency(req.params.id, data);
       if (!agency) return res.status(404).json({ error: "Agency not found" });

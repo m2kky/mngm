@@ -10,7 +10,8 @@ import {
   BarChart3,
   ChevronDown,
   Users,
-  Building
+  Building,
+  Settings2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -33,10 +34,16 @@ const navigation = [
   { name: "Team", href: "/team", icon: Users },
 ];
 
+const adminNavigation = [
+  { name: "Settings", href: "/settings", icon: Settings2 },
+];
+
 export function Sidebar({ isCollapsed }: SidebarProps) {
   const [location] = useLocation();
   const { userProfile } = useAuth();
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
+
+  const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
 
   const mockTeamMembers = [
     { id: "1", name: "Sarah Wilson", role: "Designer", avatar: "", online: true },
@@ -113,6 +120,32 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
               </Link>
             );
           })}
+
+          {/* Admin-only navigation */}
+          {isAdmin && (
+            <div className={cn("pt-2 mt-2 border-t border-white/10")}>
+              {adminNavigation.map((item) => {
+                const isActive = location === item.href;
+                const Icon = item.icon;
+                return (
+                  <Link key={item.name} href={item.href}>
+                    <Button
+                      variant={isActive ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start transition-colors duration-200",
+                        isActive && "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
+                        !isActive && "hover:bg-white/10",
+                        isCollapsed && "px-2"
+                      )}
+                    >
+                      <Icon className={cn("h-4 w-4", !isCollapsed && "mr-3")} />
+                      {!isCollapsed && <span>{item.name}</span>}
+                    </Button>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </nav>
 
         {/* Team Section */}

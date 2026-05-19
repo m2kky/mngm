@@ -1,13 +1,26 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "dark" | "system";
-type Language = "en" | "ar";
+export type Theme = "light" | "dark" | "system";
+export type Language = "en" | "ar";
+
+export const ACCENT_COLORS = [
+  { label: "Indigo", value: "indigo", hsl: "231, 98%, 65%" },
+  { label: "Purple", value: "purple", hsl: "271, 91%, 65%" },
+  { label: "Blue", value: "blue", hsl: "217, 91%, 60%" },
+  { label: "Green", value: "green", hsl: "142, 71%, 45%" },
+  { label: "Orange", value: "orange", hsl: "25, 95%, 53%" },
+  { label: "Rose", value: "rose", hsl: "347, 89%, 60%" },
+] as const;
+
+export type AccentColor = typeof ACCENT_COLORS[number]["value"];
 
 interface ThemeContextType {
   theme: Theme;
   language: Language;
+  accentColor: AccentColor;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
+  setAccentColor: (color: AccentColor) => void;
   isRTL: boolean;
 }
 
@@ -21,25 +34,36 @@ export function useTheme() {
   return context;
 }
 
+function applyAccentColor(hsl: string) {
+  const root = document.documentElement;
+  root.style.setProperty("--primary", `hsl(${hsl})`);
+  root.style.setProperty("--ring", `hsl(${hsl})`);
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem("theme") as Theme;
     return stored || "system";
   });
-  
+
   const [language, setLanguage] = useState<Language>(() => {
     const stored = localStorage.getItem("language") as Language;
     return stored || "en";
+  });
+
+  const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
+    const stored = localStorage.getItem("accentColor") as AccentColor;
+    return stored || "indigo";
   });
 
   const isRTL = language === "ar";
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
-    
+
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
-    
+
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
         ? "dark"
@@ -56,12 +80,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = language;
   }, [language, isRTL]);
 
+  useEffect(() => {
+    localStorage.setItem("accentColor", accentColor);
+    const preset = ACCENT_COLORS.find((c) => c.value === accentColor);
+    if (preset) applyAccentColor(preset.hsl);
+  }, [accentColor]);
+
+  const setAccentColor = (color: AccentColor) => {
+    setAccentColorState(color);
+  };
+
   const value = {
     theme,
     language,
+    accentColor,
     setTheme,
     setLanguage,
-    isRTL
+    setAccentColor,
+    isRTL,
   };
 
   return (

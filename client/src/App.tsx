@@ -19,6 +19,7 @@ import Files from "@/pages/Files";
 import Pages from "@/pages/Pages";
 import Team from "@/pages/Team";
 import ClientPortalPage from "@/pages/ClientPortalPage";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
 function LoadingSpinner() {
@@ -119,6 +120,11 @@ function Router() {
       <Route path="/team">
         <InternalRoute>
           <Team />
+        </InternalRoute>
+      </Route>
+      <Route path="/settings">
+        <InternalRoute>
+          <Settings />
         </InternalRoute>
       </Route>
       <Route component={NotFound} />
