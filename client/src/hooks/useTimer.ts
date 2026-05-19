@@ -12,12 +12,12 @@ export function useTimer() {
 
   // Load active timer on mount
   useEffect(() => {
-    if (!userProfile) return;
+    if (!userProfile || !db) return;
 
     const loadActiveTimer = async () => {
       try {
         const q = query(
-          collection(db, "timers"),
+          collection(db!, "timers"),
           where("userId", "==", userProfile.id),
           where("isActive", "==", true),
           orderBy("createdAt", "desc"),
@@ -40,7 +40,7 @@ export function useTimer() {
           // Calculate remaining time
           const now = new Date();
           const elapsed = Math.floor((now.getTime() - timerData.startTime.getTime()) / 1000);
-          const duration = timerData.duration || 1500; // 25 minutes default
+          const duration = timerData.duration || 1500;
           const remaining = Math.max(0, duration - elapsed);
           
           setTimeLeft(remaining);
@@ -72,19 +72,20 @@ export function useTimer() {
   }, [isRunning, timeLeft]);
 
   const startTimer = useCallback(async (taskId?: string, duration: number = 1500) => {
-    if (!userProfile) return;
+    if (!userProfile || !db) return;
 
     try {
       const timerData: InsertTimer = {
         userId: userProfile.id,
         taskId: taskId || null,
         startTime: new Date(),
+        endTime: null,
         duration,
         isActive: true,
         workspaceId: userProfile.workspaceId,
       };
 
-      const docRef = await addDoc(collection(db, "timers"), {
+      const docRef = await addDoc(collection(db!, "timers"), {
         ...timerData,
         createdAt: new Date(),
       });
@@ -105,13 +106,13 @@ export function useTimer() {
   }, [userProfile]);
 
   const stopTimer = useCallback(async () => {
-    if (!activeTimer || !userProfile) return;
+    if (!activeTimer || !userProfile || !db) return;
 
     try {
       const endTime = new Date();
       const actualDuration = Math.floor((endTime.getTime() - activeTimer.startTime.getTime()) / 1000);
 
-      await updateDoc(doc(db, "timers", activeTimer.id), {
+      await updateDoc(doc(db!, "timers", activeTimer.id), {
         endTime,
         duration: actualDuration,
         isActive: false,

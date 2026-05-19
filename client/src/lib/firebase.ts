@@ -1,27 +1,37 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { initializeApp, FirebaseApp } from "firebase/app";
+import { getAuth, Auth } from "firebase/auth";
+import { getFirestore, Firestore } from "firebase/firestore";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebasestorage.app`,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+const appId = import.meta.env.VITE_FIREBASE_APP_ID;
 
-// Validate required environment variables
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-  throw new Error(
-    "Missing Firebase configuration. Please ensure VITE_FIREBASE_API_KEY, VITE_FIREBASE_PROJECT_ID, and VITE_FIREBASE_APP_ID are set."
+export const firebaseConfigured = !!(apiKey && projectId && appId);
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
+
+if (firebaseConfigured) {
+  const firebaseConfig = {
+    apiKey,
+    authDomain: `${projectId}.firebaseapp.com`,
+    projectId,
+    storageBucket: `${projectId}.firebasestorage.app`,
+    appId,
+  };
+
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+} else {
+  console.warn(
+    "Firebase is not configured. Set VITE_FIREBASE_API_KEY, VITE_FIREBASE_PROJECT_ID, and VITE_FIREBASE_APP_ID to enable authentication."
   );
 }
 
-const app = initializeApp(firebaseConfig);
-
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-
+export { auth, db, storage };
 export default app;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "wouter";
+import { Redirect } from "wouter";
 import { ChevronRight, ChevronLeft, Check, Users, Building } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -58,7 +58,7 @@ export default function Onboarding() {
 
   // If user already has profile, redirect to dashboard
   if (userProfile?.workspaceId) {
-    return <Navigate to="/dashboard" />;
+    return <Redirect to="/dashboard" />;
   }
 
   const progress = (currentStep / steps.length) * 100;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "wouter";
+import { Redirect } from "wouter";
 import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -19,7 +19,7 @@ export default function Login() {
 
   // Redirect if already logged in
   if (currentUser) {
-    return <Navigate to="/dashboard" />;
+    return <Redirect to="/dashboard" />;
   }
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
