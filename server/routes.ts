@@ -1165,13 +1165,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const { startDate, endDate } = req.query;
-      const [entries, agencyUsers] = await Promise.all([
-        storage.getTimeEntries({ agencyId: me.agencyId }),
-        storage.getAgencyUsers(me.agencyId),
-      ]);
       const start = startDate ? new Date(startDate as string) : null;
       const end = endDate ? new Date(endDate as string) : null;
-      const filtered = entries.filter(e => {
+
+      const [entries, agencyUsers, assigneeRows] = await Promise.all([
+        storage.getTimeEntries({ agencyId: me.agencyId }),
+        storage.getAgencyUsers(me.agencyId),
+        db.select({
+          userId:      taskAssignees.userId,
+          completedAt: tasksTable.completedAt,
+          createdAt:   tasksTable.createdAt,
+        })
+          .from(taskAssignees)
+          .innerJoin(tasksTable, eq(taskAssignees.taskId, tasksTable.id))
+          .where(eq(tasksTable.agencyId, me.agencyId)),
+      ]);
+
+      // Seed user map from agency users
+      const userMap: Record<string, {
+        name: string;
+        minutes: number;
+        tasksAssigned: number;
+        tasksCompleted: number;
+      }> = {};
+      agencyUsers.forEach(u => {
+        userMap[u.id] = { name: u.name ?? u.email, minutes: 0, tasksAssigned: 0, tasksCompleted: 0 };
+      });
+
+      // Aggregate time entries (with date filter)
+      const filteredEntries = entries.filter(e => {
         if (!start && !end) return true;
         const ref = e.startTime ? new Date(e.startTime) : null;
         if (!ref) return true;
@@ -1179,19 +1201,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (end && ref > end) return false;
         return true;
       });
-      const userMap: Record<string, { name: string; minutes: number }> = {};
-      agencyUsers.forEach(u => { userMap[u.id] = { name: u.name ?? u.email, minutes: 0 }; });
-      filtered.forEach(e => {
+      filteredEntries.forEach(e => {
         if (e.userId && userMap[e.userId]) {
           userMap[e.userId].minutes += e.durationMinutes ?? 0;
         }
       });
-      res.json(
-        Object.entries(userMap)
-          .map(([userId, v]) => ({ userId, name: v.name, hours: Math.round(v.minutes / 60 * 10) / 10 }))
-          .filter(u => u.hours > 0)
-          .sort((a, b) => b.hours - a.hours),
-      );
+
+      // Aggregate task assignments (filter by task createdAt within range)
+      assigneeRows.forEach(row => {
+        if (!userMap[row.userId]) return;
+        const taskCreated = row.createdAt ? new Date(row.createdAt) : null;
+        if (taskCreated) {
+          if (start && taskCreated < start) return;
+          if (end && taskCreated > end) return;
+        }
+        userMap[row.userId].tasksAssigned += 1;
+        if (row.completedAt) userMap[row.userId].tasksCompleted += 1;
+      });
+
+      const result = Object.entries(userMap)
+        .map(([userId, v]) => {
+          const hours = Math.round(v.minutes / 60 * 10) / 10;
+          const tasksPerHour = hours > 0 ? Math.round((v.tasksCompleted / hours) * 10) / 10 : 0;
+          return {
+            userId,
+            name: v.name,
+            hours,
+            tasksAssigned: v.tasksAssigned,
+            tasksCompleted: v.tasksCompleted,
+            tasksPerHour,
+          };
+        })
+        .filter(u => u.hours > 0 || u.tasksAssigned > 0)
+        .sort((a, b) => b.tasksCompleted - a.tasksCompleted || b.hours - a.hours);
+
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

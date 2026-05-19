@@ -49,6 +49,9 @@ interface TimeMember {
   userId: string;
   name: string;
   hours: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tasksPerHour: number;
 }
 
 interface Project {
@@ -284,9 +287,12 @@ export default function Reports() {
     );
     lines.push("");
 
-    lines.push("TIME LOGGED PER TEAM MEMBER");
-    lines.push(toCSVRow(["Member", "Hours Logged"]));
-    timeByMember.forEach(d => lines.push(toCSVRow([d.name, d.hours])));
+    lines.push("TEAM PRODUCTIVITY BREAKDOWN");
+    lines.push(toCSVRow(["Member", "Hours Logged", "Tasks Assigned", "Tasks Completed", "Completion %", "Tasks/Hour"]));
+    timeByMember.forEach(d => {
+      const pct = d.tasksAssigned > 0 ? Math.round((d.tasksCompleted / d.tasksAssigned) * 100) : 0;
+      lines.push(toCSVRow([d.name, d.hours, d.tasksAssigned, d.tasksCompleted, pct, d.tasksPerHour]));
+    });
 
     const dateSuffix = new Date().toISOString().slice(0, 10);
     downloadCSV(`workit-report-${dateSuffix}.csv`, lines.join("\n"));
@@ -610,41 +616,97 @@ export default function Reports() {
         </CardContent>
       </Card>
 
-      {/* Time logged per member */}
+      {/* Member productivity breakdown */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Time Logged per Team Member</CardTitle>
+          <CardTitle className="text-base">Team Productivity Breakdown</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {loadingMembers ? (
-            <div className="h-52 bg-muted/30 animate-pulse rounded" />
+            <div className="divide-y">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="flex items-center gap-4 px-6 py-4 animate-pulse">
+                  <div className="h-4 bg-muted rounded w-32" />
+                  <div className="flex-1 grid grid-cols-4 gap-4">
+                    {[1,2,3,4].map(j => <div key={j} className="h-4 bg-muted rounded" />)}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : timeByMember.length === 0 ? (
             <div className="h-52 flex items-center justify-center text-muted-foreground text-sm">
-              No time entries recorded in this period
+              No activity recorded in this period
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={Math.max(220, timeByMember.length * 44)}>
-              <BarChart
-                data={timeByMember}
-                layout="vertical"
-                margin={{ top: 4, right: 40, left: 4, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} unit="h" allowDecimals={false} />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  tick={{ fontSize: 11 }}
-                  width={120}
-                  tickFormatter={n => n.length > 16 ? n.slice(0, 15) + "…" : n}
-                />
-                <Tooltip
-                  contentStyle={{ borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number) => [`${v}h`, "Hours"]}
-                />
-                <Bar dataKey="hours" name="Hours logged" fill="#f59e0b" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <>
+              {/* Table header */}
+              <div className="grid grid-cols-[1fr_6rem_7rem_7rem_7rem] gap-2 px-6 py-2 border-b bg-muted/30 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <span>Member</span>
+                <span className="text-right">Hours</span>
+                <span className="text-right">Assigned</span>
+                <span className="text-right">Completed</span>
+                <span className="text-right">Rate</span>
+              </div>
+              <div className="divide-y">
+                {timeByMember.map(member => {
+                  const completionPct = member.tasksAssigned > 0
+                    ? Math.round((member.tasksCompleted / member.tasksAssigned) * 100)
+                    : 0;
+                  return (
+                    <div
+                      key={member.userId}
+                      className="grid grid-cols-[1fr_6rem_7rem_7rem_7rem] gap-2 px-6 py-3 hover:bg-muted/20 transition-colors items-center"
+                    >
+                      {/* Name + completion bar */}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{member.name}</p>
+                        <div className="mt-1 h-1.5 bg-muted rounded-full overflow-hidden w-full max-w-[160px]">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${completionPct}%` }}
+                          />
+                        </div>
+                      </div>
+                      {/* Hours */}
+                      <div className="text-right">
+                        <span className="text-sm font-semibold">{member.hours}h</span>
+                      </div>
+                      {/* Tasks assigned */}
+                      <div className="text-right text-sm text-muted-foreground">
+                        {member.tasksAssigned}
+                      </div>
+                      {/* Tasks completed */}
+                      <div className="text-right">
+                        <span className={cn(
+                          "text-sm font-semibold",
+                          member.tasksCompleted > 0 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                        )}>
+                          {member.tasksCompleted}
+                        </span>
+                        {member.tasksAssigned > 0 && (
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({completionPct}%)
+                          </span>
+                        )}
+                      </div>
+                      {/* Tasks per hour */}
+                      <div className="text-right">
+                        <span className="text-sm font-medium">
+                          {member.hours > 0 ? `${member.tasksPerHour}/h` : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Legend */}
+              <div className="px-6 py-3 border-t bg-muted/10 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span><span className="font-medium text-foreground">Hours</span> — time logged in this period</span>
+                <span><span className="font-medium text-foreground">Assigned</span> — tasks created within this period</span>
+                <span><span className="font-medium text-foreground">Completed</span> — of those tasks done</span>
+                <span><span className="font-medium text-foreground">Rate</span> — completed tasks per hour logged</span>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
