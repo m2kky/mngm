@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, and, isNull, isNotNull, asc, desc } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, asc, desc, count } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, agencies, clients, projects, projectStages, tasks,
@@ -80,6 +80,8 @@ export interface IStorage {
   getNotifications(filters: { userId?: string; agencyId?: string; readAt?: boolean }): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationRead(id: string): Promise<Notification | undefined>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  markAllNotificationsRead(userId: string): Promise<number>;
 
   // Invitation methods
   getInvitations(agencyId: string): Promise<Invitation[]>;
@@ -308,6 +310,23 @@ export class DrizzleStorage implements IStorage {
   async markNotificationRead(id: string): Promise<Notification | undefined> {
     const result = await db.update(notifications).set({ readAt: new Date() }).where(eq(notifications.id, id)).returning();
     return result[0];
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: count() })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+    return Number(result[0]?.count ?? 0);
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<number> {
+    const result = await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+      .returning({ id: notifications.id });
+    return result.length;
   }
 
   // Invitation methods

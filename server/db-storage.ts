@@ -491,6 +491,23 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+    return rows.length;
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<number> {
+    const rows = await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+      .returning({ id: notifications.id });
+    return rows.length;
+  }
+
   // ─── Invitation methods ──────────────────────────────────────────────────────
 
   async getInvitations(agencyId: string): Promise<Invitation[]> {

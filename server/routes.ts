@@ -58,7 +58,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
-  wss.on("connection", (ws) => {
+  // userId -> set of authenticated WebSocket connections (a user may be connected
+  // from multiple tabs/devices; notifications are delivered to all of them).
+  const userSockets = new Map<string, Set<import("ws").WebSocket>>();
+
+  wss.on("connection", (ws, req) => {
+    // Authenticate using ?token=<jwt> on the upgrade URL. Unauthenticated
+    // sockets stay connected (some legacy chat code uses anonymous broadcast)
+    // but only authenticated ones receive per-user notifications.
+    let userId: string | null = null;
+    try {
+      const url = new URL(req.url ?? "", "http://localhost");
+      const token = url.searchParams.get("token");
+      if (token) {
+        const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+        userId = payload.userId;
+        if (userId) {
+          if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+          userSockets.get(userId)!.add(ws);
+        }
+      }
+    } catch {
+      // ignore — connection remains anonymous
+    }
+
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message.toString());
@@ -71,7 +94,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // ignore parse errors
       }
     });
+
+    ws.on("close", () => {
+      if (userId) {
+        const set = userSockets.get(userId);
+        if (set) {
+          set.delete(ws);
+          if (set.size === 0) userSockets.delete(userId);
+        }
+      }
+    });
   });
+
+  // Create a notification in the database and push it live over WebSocket to
+  // every active connection belonging to the target user. Failures (DB or WS)
+  // are swallowed so they cannot break the originating user action.
+  async function notifyUser(
+    userId: string,
+    payload: {
+      agencyId: string;
+      type: typeof insertNotificationSchema._type.type;
+      title: string;
+      body?: string;
+      actorUserId?: string;
+      entityType?: string;
+      entityId?: string;
+      deepLink?: string;
+    },
+  ): Promise<void> {
+    try {
+      const notification = await storage.createNotification({
+        userId,
+        agencyId: payload.agencyId,
+        type: payload.type,
+        title: payload.title,
+        body: payload.body,
+        actorUserId: payload.actorUserId,
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        deepLink: payload.deepLink,
+      } as any);
+      const sockets = userSockets.get(userId);
+      if (sockets) {
+        const message = JSON.stringify({ type: "notification", data: notification });
+        sockets.forEach((s) => {
+          if (s.readyState === s.OPEN) s.send(message);
+        });
+      }
+    } catch (e) {
+      console.error("[notifyUser] failed:", e);
+    }
+  }
 
   const requireAuth = (req: any, res: any, next: any) => {
     const header = req.headers.authorization as string | undefined;
@@ -560,6 +633,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .insert(taskAssignees)
         .values({ taskId: req.params.taskId, userId })
         .onConflictDoNothing();
+
+      // Notify the newly-assigned user (skip self-assignment).
+      if (userId !== req.userId) {
+        const task = await storage.getTask(req.params.taskId);
+        const actor = await storage.getUser(req.userId);
+        if (task) {
+          await notifyUser(userId, {
+            agencyId,
+            type: "TASK_ASSIGNED",
+            title: `You were assigned a task`,
+            body: `${actor?.name ?? "Someone"} assigned you to "${task.title}"`,
+            actorUserId: req.userId,
+            entityType: "task",
+            entityId: task.id,
+            deepLink: `/kanban?task=${task.id}`,
+          });
+        }
+      }
       res.status(201).json({ taskId: req.params.taskId, userId });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -634,9 +725,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tasks/:taskId/comments", requireAuth, async (req, res) => {
+  app.post("/api/tasks/:taskId/comments", requireAuth, async (req: any, res) => {
     try {
-      const data = insertTaskCommentSchema.parse({ ...req.body, taskId: req.params.taskId });
+      // Enforce that the task belongs to the requester's agency before
+      // creating the comment or notifying anyone.
+      const taskAgencyId = await verifyTaskAgency(req.params.taskId, req.userId);
+      if (!taskAgencyId) return res.status(403).json({ error: "Forbidden" });
+
+      const data = insertTaskCommentSchema.parse({
+        ...req.body,
+        taskId: req.params.taskId,
+        userId: req.userId,
+      });
       const comment = await storage.createTaskComment(data);
 
       wss.clients.forEach((client) => {
@@ -644,6 +744,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           client.send(JSON.stringify({ type: "new_comment", data: comment }));
         }
       });
+
+      // Notify everyone assigned to the task (except the comment author).
+      try {
+        const task = await storage.getTask(req.params.taskId);
+        const actor = await storage.getUser(req.userId);
+        if (task && actor?.agencyId) {
+          const assignees = await db
+            .select({ userId: taskAssignees.userId })
+            .from(taskAssignees)
+            .where(eq(taskAssignees.taskId, req.params.taskId));
+          for (const a of assignees) {
+            if (a.userId !== req.userId) {
+              await notifyUser(a.userId, {
+                agencyId: actor.agencyId,
+                type: "COMMENT_ADDED",
+                title: `New comment on "${task.title}"`,
+                body: `${actor.name ?? "Someone"} commented on a task you're on`,
+                actorUserId: req.userId,
+                entityType: "task",
+                entityId: task.id,
+                deepLink: `/kanban?task=${task.id}`,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[comment notify] failed:", e);
+      }
 
       res.status(201).json(comment);
     } catch (e: any) {
@@ -680,42 +808,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Notifications ───────────────────────────────────────────────────────────
 
-  app.get("/api/notifications", requireAuth, async (req, res) => {
+  // List notifications for the authenticated user only (server-side scoped —
+  // never trusts a userId from the client).
+  app.get("/api/notifications", requireAuth, async (req: any, res) => {
     try {
-      const { userId, agencyId, unread } = req.query;
-      const notifications = await storage.getNotifications({
-        userId: userId as string,
-        agencyId: agencyId as string,
+      const { unread, limit } = req.query;
+      const list = await storage.getNotifications({
+        userId: req.userId,
         readAt: unread === "true" ? false : undefined,
       });
-      res.json(notifications);
+      const capped = limit ? list.slice(0, parseInt(limit as string, 10)) : list;
+      res.json(capped);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/notifications", requireAuth, async (req, res) => {
+  app.get("/api/notifications/unread-count", requireAuth, async (req: any, res) => {
     try {
-      const data = insertNotificationSchema.parse(req.body);
-      const notification = await storage.createNotification(data);
-
-      wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) {
-          client.send(JSON.stringify({ type: "notification", data: notification }));
-        }
-      });
-
-      res.status(201).json(notification);
+      const count = await storage.getUnreadNotificationCount(req.userId);
+      res.json({ count });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      res.status(500).json({ error: e.message });
     }
   });
 
-  app.put("/api/notifications/:id/read", requireAuth, async (req, res) => {
+  app.patch("/api/notifications/read-all", requireAuth, async (req: any, res) => {
     try {
-      const notification = await storage.markNotificationRead(req.params.id);
-      if (!notification) return res.status(404).json({ error: "Notification not found" });
-      res.json(notification);
+      const updated = await storage.markAllNotificationsRead(req.userId);
+      res.json({ updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Owner-only: a user may only mark their own notifications read.
+  app.patch("/api/notifications/:id/read", requireAuth, async (req: any, res) => {
+    try {
+      const list = await storage.getNotifications({ userId: req.userId });
+      const target = list.find((n) => n.id === req.params.id);
+      if (!target) return res.status(404).json({ error: "Notification not found" });
+      const updated = await storage.markNotificationRead(req.params.id);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  // Legacy PUT alias kept for any older callers
+  app.put("/api/notifications/:id/read", requireAuth, async (req: any, res) => {
+    try {
+      const list = await storage.getNotifications({ userId: req.userId });
+      const target = list.find((n) => n.id === req.params.id);
+      if (!target) return res.status(404).json({ error: "Notification not found" });
+      const updated = await storage.markNotificationRead(req.params.id);
+      res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

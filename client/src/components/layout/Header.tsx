@@ -4,12 +4,12 @@ import {
   Search, 
   Moon, 
   Sun, 
-  Bell, 
   Menu, 
   LogOut,
   Settings,
   User
 } from "lucide-react";
+import { NotificationBell } from "./NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/contexts/ThemeContext";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -115,14 +115,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             </Button>
 
             {/* Notifications */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="p-2 hover:bg-white/10 relative"
-            >
-              <Bell className="h-4 w-4" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-            </Button>
+            <NotificationBell />
 
             {/* User Menu */}
             <DropdownMenu>
