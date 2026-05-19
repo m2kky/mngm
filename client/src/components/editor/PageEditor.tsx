@@ -36,12 +36,23 @@ export function PageEditor({ page, agencyId }: PageEditorProps) {
   const saveMutation = useMutation({
     mutationFn: (payload: { title: string; content: Block[] }) =>
       apiRequest("PUT", `/api/pages/${page.id}`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages", agencyId] });
+    onMutate: ({ title: newTitle }) => {
+      queryClient.setQueryData<Page[]>(
+        ["/api/pages", agencyId],
+        (old) => old?.map((p) => (p.id === page.id ? { ...p, title: newTitle } : p)) ?? old
+      );
+    },
+    onSuccess: async (res) => {
+      const updated: Page = await res.json();
+      queryClient.setQueryData<Page[]>(
+        ["/api/pages", agencyId],
+        (old) => old?.map((p) => (p.id === page.id ? updated : p)) ?? old
+      );
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
     onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pages", agencyId] });
       toast({ title: "Failed to save page", variant: "destructive" });
     },
   });
