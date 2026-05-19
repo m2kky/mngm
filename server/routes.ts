@@ -9,12 +9,17 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, lte, count, sql, desc, isNotNull } from "drizzle-orm";
+import { reportCache, REPORT_TTL_MS } from "./cache";
 import {
   type User,
   taskAssignees,
   users,
   tasks as tasksTable,
+  projects,
+  clients,
+  timeEntries,
+  attendanceRecords,
   insertUserSchema,
   insertAgencySchema,
   insertClientSchema,
@@ -1040,52 +1045,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const { startDate, endDate, projectId } = req.query;
-      const [allTasks, allProjects, allClients, allUsers, allTimeEntries, attendance] = await Promise.all([
-        storage.getTasks({ agencyId: me.agencyId, projectId: projectId as string }),
-        storage.getProjects({ agencyId: me.agencyId }),
-        storage.getClients({ agencyId: me.agencyId }),
-        storage.getAgencyUsers(me.agencyId),
-        storage.getTimeEntries({ agencyId: me.agencyId }),
-        storage.getAttendanceRecords({ agencyId: me.agencyId }),
-      ]);
-      const now = new Date();
+      const cacheKey = `reports:overview:${me.agencyId}:${startDate ?? ""}:${endDate ?? ""}:${projectId ?? ""}`;
+      const cached = reportCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
       const start = startDate ? new Date(startDate as string) : null;
       const end = endDate ? new Date(endDate as string) : null;
-      const filteredTasks = allTasks.filter(t => {
-        if (!start && !end) return true;
-        const ref = t.createdAt ? new Date(t.createdAt) : null;
-        if (!ref) return true;
-        if (start && ref < start) return false;
-        if (end && ref > end) return false;
-        return true;
-      });
-      const totalMinutes = allTimeEntries.reduce((sum, e) => sum + (e.durationMinutes ?? 0), 0);
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+
+      // Build task WHERE clauses for DB-level aggregation
+      const taskConditions = [eq(tasksTable.agencyId, me.agencyId)];
+      if (projectId) taskConditions.push(eq(tasksTable.projectId, projectId as string));
+      if (start) taskConditions.push(gte(tasksTable.createdAt, start));
+      if (end) taskConditions.push(lte(tasksTable.createdAt, end));
+
+      // Run all queries in parallel using DB-level aggregation
+      const [taskRows, projectCounts, clientCount, teamCount, hoursRow, attendanceRow] = await Promise.all([
+        // Fetch only the columns needed for status bucketing
+        db.select({
+          completedAt: tasksTable.completedAt,
+          dueDate: tasksTable.dueDate,
+          reviewStatus: tasksTable.reviewStatus,
+        }).from(tasksTable).where(and(...taskConditions)),
+
+        // Project counts via GROUP BY status
+        db.select({ status: projects.status, cnt: count() })
+          .from(projects)
+          .where(eq(projects.agencyId, me.agencyId))
+          .groupBy(projects.status),
+
+        // Client count
+        db.select({ cnt: count() })
+          .from(clients)
+          .where(eq(clients.agencyId, me.agencyId))
+          .then(r => Number(r[0]?.cnt ?? 0)),
+
+        // Team size
+        db.select({ cnt: count() })
+          .from(users)
+          .where(and(eq(users.agencyId, me.agencyId), isNotNull(users.agencyId)))
+          .then(r => Number(r[0]?.cnt ?? 0)),
+
+        // Total hours from time entries
+        db.select({ total: sql<number>`COALESCE(SUM(duration_minutes), 0)` })
+          .from(timeEntries)
+          .where(eq(timeEntries.agencyId, me.agencyId))
+          .then(r => Number(r[0]?.total ?? 0)),
+
+        // Present today
+        db.select({ cnt: count() })
+          .from(attendanceRecords)
+          .where(and(
+            eq(attendanceRecords.agencyId, me.agencyId),
+            eq(attendanceRecords.date, today),
+            isNotNull(attendanceRecords.checkInAt),
+          ))
+          .then(r => Number(r[0]?.cnt ?? 0)),
+      ]);
+
       const tasksByStatus: Record<string, number> = { TODO: 0, IN_PROGRESS: 0, IN_REVIEW: 0, DONE: 0, OVERDUE: 0 };
-      filteredTasks.forEach(t => {
+      let completedTasks = 0;
+      let overdueTasks = 0;
+      taskRows.forEach(t => {
         if (t.completedAt) {
           tasksByStatus["DONE"]++;
+          completedTasks++;
         } else if (t.dueDate && new Date(t.dueDate) < now) {
           tasksByStatus["OVERDUE"]++;
+          overdueTasks++;
         } else if (t.reviewStatus === "PENDING") {
           tasksByStatus["IN_REVIEW"]++;
         } else {
           tasksByStatus["IN_PROGRESS"]++;
         }
       });
-      const today = new Date().toISOString().slice(0, 10);
-      const presentToday = attendance.filter(r => r.date === today && r.checkInAt).length;
-      res.json({
-        totalTasks: filteredTasks.length,
-        completedTasks: filteredTasks.filter(t => t.completedAt).length,
-        overdueTasks: filteredTasks.filter(t => t.dueDate && !t.completedAt && new Date(t.dueDate) < now).length,
-        activeProjects: allProjects.filter((p: any) => p.status === "ACTIVE").length,
-        totalProjects: allProjects.length,
-        totalClients: allClients.length,
-        teamSize: allUsers.length,
-        totalHoursLogged: Math.round(totalMinutes / 60),
-        presentToday,
+
+      const totalProjects = projectCounts.reduce((s, r) => s + Number(r.cnt), 0);
+      const activeProjects = projectCounts.filter(r => r.status === "ACTIVE").reduce((s, r) => s + Number(r.cnt), 0);
+
+      const payload = {
+        totalTasks: taskRows.length,
+        completedTasks,
+        overdueTasks,
+        activeProjects,
+        totalProjects,
+        totalClients: clientCount,
+        teamSize: teamCount,
+        totalHoursLogged: Math.round(hoursRow / 60),
+        presentToday: attendanceRow,
         tasksByStatus,
-      });
+      };
+      reportCache.set(cacheKey, payload, REPORT_TTL_MS);
+      res.json(payload);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1096,9 +1148,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const { startDate, endDate, projectId } = req.query;
-      const tasks = await storage.getTasks({ agencyId: me.agencyId, projectId: projectId as string });
+      const cacheKey = `reports:tasks-over-time:${me.agencyId}:${startDate ?? ""}:${endDate ?? ""}:${projectId ?? ""}`;
+      const cached = reportCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
       const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const end = endDate ? new Date(endDate as string) : new Date();
+
+      const taskConditions = [
+        eq(tasksTable.agencyId, me.agencyId),
+        ...(projectId ? [eq(tasksTable.projectId, projectId as string)] : []),
+      ];
+      // Fetch only the two timestamp columns needed for bucketing
+      const taskRows = await db.select({
+        createdAt: tasksTable.createdAt,
+        completedAt: tasksTable.completedAt,
+      }).from(tasksTable).where(and(...taskConditions));
+
       // Build daily buckets
       const buckets: Record<string, { created: number; completed: number }> = {};
       const cursor = new Date(start);
@@ -1106,7 +1172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         buckets[cursor.toISOString().slice(0, 10)] = { created: 0, completed: 0 };
         cursor.setDate(cursor.getDate() + 1);
       }
-      tasks.forEach(t => {
+      taskRows.forEach(t => {
         if (t.createdAt) {
           const d = new Date(t.createdAt).toISOString().slice(0, 10);
           if (buckets[d]) buckets[d].created++;
@@ -1116,7 +1182,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (buckets[d]) buckets[d].completed++;
         }
       });
-      res.json(Object.entries(buckets).map(([date, v]) => ({ date, ...v })));
+      const payload = Object.entries(buckets).map(([date, v]) => ({ date, ...v }));
+      reportCache.set(cacheKey, payload, REPORT_TTL_MS);
+      res.json(payload);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1127,34 +1195,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const { startDate, endDate } = req.query;
-      const [tasks, projects] = await Promise.all([
-        storage.getTasks({ agencyId: me.agencyId }),
-        storage.getProjects({ agencyId: me.agencyId }),
-      ]);
+      const cacheKey = `reports:tasks-by-project:${me.agencyId}:${startDate ?? ""}:${endDate ?? ""}`;
+      const cached = reportCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
       const start = startDate ? new Date(startDate as string) : null;
       const end = endDate ? new Date(endDate as string) : null;
-      const filtered = tasks.filter(t => {
-        if (!start && !end) return true;
-        const ref = t.createdAt ? new Date(t.createdAt) : null;
-        if (!ref) return true;
-        if (start && ref < start) return false;
-        if (end && ref > end) return false;
-        return true;
-      });
-      const projectMap: Record<string, { name: string; total: number; completed: number }> = {};
-      projects.forEach(p => { projectMap[p.id] = { name: p.name, total: 0, completed: 0 }; });
-      filtered.forEach(t => {
-        if (!projectMap[t.projectId]) return;
-        projectMap[t.projectId].total++;
-        if (t.completedAt) projectMap[t.projectId].completed++;
-      });
-      res.json(
-        Object.entries(projectMap)
-          .map(([id, v]) => ({ projectId: id, ...v }))
-          .filter(p => p.total > 0)
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 10),
-      );
+
+      // DB-level GROUP BY: join projects → tasks, count total & completed in SQL
+      const taskJoinConditions = [eq(tasksTable.projectId, projects.id)];
+      if (start) taskJoinConditions.push(gte(tasksTable.createdAt, start));
+      if (end) taskJoinConditions.push(lte(tasksTable.createdAt, end));
+
+      const rows = await db
+        .select({
+          projectId: projects.id,
+          name: projects.name,
+          total: count(tasksTable.id),
+          completed: sql<number>`COUNT(${tasksTable.completedAt})`,
+        })
+        .from(projects)
+        .leftJoin(tasksTable, and(...taskJoinConditions))
+        .where(eq(projects.agencyId, me.agencyId))
+        .groupBy(projects.id, projects.name)
+        .orderBy(desc(count(tasksTable.id)))
+        .limit(10);
+
+      const payload = rows
+        .map(r => ({ projectId: r.projectId, name: r.name, total: Number(r.total), completed: Number(r.completed) }))
+        .filter(r => r.total > 0);
+      reportCache.set(cacheKey, payload, REPORT_TTL_MS);
+      res.json(payload);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1165,80 +1236,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const { startDate, endDate } = req.query;
+      const cacheKey = `reports:time-by-member:${me.agencyId}:${startDate ?? ""}:${endDate ?? ""}`;
+      const cached = reportCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
       const start = startDate ? new Date(startDate as string) : null;
       const end = endDate ? new Date(endDate as string) : null;
 
-      const [entries, agencyUsers, assigneeRows] = await Promise.all([
-        storage.getTimeEntries({ agencyId: me.agencyId }),
+      // Build time-entry conditions
+      const timeConditions = [eq(timeEntries.agencyId, me.agencyId)];
+      if (start) timeConditions.push(gte(timeEntries.startTime, start));
+      if (end) timeConditions.push(lte(timeEntries.startTime, end));
+
+      // Build task-assignee conditions
+      const taskConditions = [eq(tasksTable.agencyId, me.agencyId)];
+      if (start) taskConditions.push(gte(tasksTable.createdAt, start));
+      if (end) taskConditions.push(lte(tasksTable.createdAt, end));
+
+      const [agencyUsers, timeRows, assigneeRows] = await Promise.all([
         storage.getAgencyUsers(me.agencyId),
+
+        // Only fetch userId + durationMinutes from time_entries
+        db.select({ userId: timeEntries.userId, durationMinutes: timeEntries.durationMinutes })
+          .from(timeEntries)
+          .where(and(...timeConditions)),
+
+        // Assignee rows already filtered at DB level
         db.select({
-          userId:      taskAssignees.userId,
+          userId: taskAssignees.userId,
           completedAt: tasksTable.completedAt,
-          createdAt:   tasksTable.createdAt,
         })
           .from(taskAssignees)
-          .innerJoin(tasksTable, eq(taskAssignees.taskId, tasksTable.id))
-          .where(eq(tasksTable.agencyId, me.agencyId)),
+          .innerJoin(tasksTable, and(eq(taskAssignees.taskId, tasksTable.id), ...taskConditions)),
       ]);
 
-      // Seed user map from agency users
-      const userMap: Record<string, {
-        name: string;
-        minutes: number;
-        tasksAssigned: number;
-        tasksCompleted: number;
-      }> = {};
+      const userMap: Record<string, { name: string; minutes: number; tasksAssigned: number; tasksCompleted: number }> = {};
       agencyUsers.forEach(u => {
         userMap[u.id] = { name: u.name ?? u.email, minutes: 0, tasksAssigned: 0, tasksCompleted: 0 };
       });
 
-      // Aggregate time entries (with date filter)
-      const filteredEntries = entries.filter(e => {
-        if (!start && !end) return true;
-        const ref = e.startTime ? new Date(e.startTime) : null;
-        if (!ref) return true;
-        if (start && ref < start) return false;
-        if (end && ref > end) return false;
-        return true;
-      });
-      filteredEntries.forEach(e => {
+      timeRows.forEach(e => {
         if (e.userId && userMap[e.userId]) {
           userMap[e.userId].minutes += e.durationMinutes ?? 0;
         }
       });
 
-      // Aggregate task assignments (filter by task createdAt within range)
       assigneeRows.forEach(row => {
         if (!userMap[row.userId]) return;
-        const taskCreated = row.createdAt ? new Date(row.createdAt) : null;
-        if (taskCreated) {
-          if (start && taskCreated < start) return;
-          if (end && taskCreated > end) return;
-        }
         userMap[row.userId].tasksAssigned += 1;
         if (row.completedAt) userMap[row.userId].tasksCompleted += 1;
       });
 
-      const result = Object.entries(userMap)
+      const payload = Object.entries(userMap)
         .map(([userId, v]) => {
           const hours = Math.round(v.minutes / 60 * 10) / 10;
-          // Use raw minutes for rate precision to avoid double-rounding drift
           const tasksPerHour = v.minutes > 0
             ? Math.round((v.tasksCompleted / (v.minutes / 60)) * 10) / 10
             : 0;
-          return {
-            userId,
-            name: v.name,
-            hours,
-            tasksAssigned: v.tasksAssigned,
-            tasksCompleted: v.tasksCompleted,
-            tasksPerHour,
-          };
+          return { userId, name: v.name, hours, tasksAssigned: v.tasksAssigned, tasksCompleted: v.tasksCompleted, tasksPerHour };
         })
         .filter(u => u.hours > 0 || u.tasksAssigned > 0)
         .sort((a, b) => b.tasksCompleted - a.tasksCompleted || b.hours - a.hours);
 
-      res.json(result);
+      reportCache.set(cacheKey, payload, REPORT_TTL_MS);
+      res.json(payload);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
