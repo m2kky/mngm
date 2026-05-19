@@ -1054,20 +1054,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const now = new Date();
       const today = now.toISOString().slice(0, 10);
 
-      // Build task WHERE clauses for DB-level aggregation
-      const taskConditions = [eq(tasksTable.agencyId, me.agencyId)];
-      if (projectId) taskConditions.push(eq(tasksTable.projectId, projectId as string));
-      if (start) taskConditions.push(gte(tasksTable.createdAt, start));
-      if (end) taskConditions.push(lte(tasksTable.createdAt, end));
+      // Build task WHERE clauses
+      const taskWhere: ReturnType<typeof eq>[] = [eq(tasksTable.agencyId, me.agencyId) as any];
+      if (projectId) taskWhere.push(eq(tasksTable.projectId, projectId as string) as any);
+      if (start) taskWhere.push(gte(tasksTable.createdAt, start) as any);
+      if (end) taskWhere.push(lte(tasksTable.createdAt, end) as any);
 
-      // Run all queries in parallel using DB-level aggregation
-      const [taskRows, projectCounts, clientCount, teamCount, hoursRow, attendanceRow] = await Promise.all([
-        // Fetch only the columns needed for status bucketing
+      // All aggregation done in the DB — no row fetching into Node
+      const [taskAgg, projectCounts, clientCount, teamCount, hoursRow, attendanceRow] = await Promise.all([
+        // Single query: conditional COUNT for every status bucket
         db.select({
-          completedAt: tasksTable.completedAt,
-          dueDate: tasksTable.dueDate,
-          reviewStatus: tasksTable.reviewStatus,
-        }).from(tasksTable).where(and(...taskConditions)),
+          total:      count(),
+          completed:  sql<number>`COUNT(${tasksTable.completedAt})`,
+          overdue:    sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.dueDate} IS NOT NULL AND ${tasksTable.dueDate} < NOW() THEN 1 END)`,
+          inReview:   sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.reviewStatus} = 'PENDING' AND (${tasksTable.dueDate} IS NULL OR ${tasksTable.dueDate} >= NOW()) THEN 1 END)`,
+          inProgress: sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.reviewStatus} != 'PENDING' AND (${tasksTable.dueDate} IS NULL OR ${tasksTable.dueDate} >= NOW()) THEN 1 END)`,
+        }).from(tasksTable).where(and(...taskWhere)),
 
         // Project counts via GROUP BY status
         db.select({ status: projects.status, cnt: count() })
@@ -1084,11 +1086,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Team size
         db.select({ cnt: count() })
           .from(users)
-          .where(and(eq(users.agencyId, me.agencyId), isNotNull(users.agencyId)))
+          .where(eq(users.agencyId, me.agencyId))
           .then(r => Number(r[0]?.cnt ?? 0)),
 
-        // Total hours from time entries
-        db.select({ total: sql<number>`COALESCE(SUM(duration_minutes), 0)` })
+        // Total hours — SUM in SQL
+        db.select({ total: sql<number>`COALESCE(SUM(${timeEntries.durationMinutes}), 0)` })
           .from(timeEntries)
           .where(eq(timeEntries.agencyId, me.agencyId))
           .then(r => Number(r[0]?.total ?? 0)),
@@ -1104,37 +1106,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .then(r => Number(r[0]?.cnt ?? 0)),
       ]);
 
-      const tasksByStatus: Record<string, number> = { TODO: 0, IN_PROGRESS: 0, IN_REVIEW: 0, DONE: 0, OVERDUE: 0 };
-      let completedTasks = 0;
-      let overdueTasks = 0;
-      taskRows.forEach(t => {
-        if (t.completedAt) {
-          tasksByStatus["DONE"]++;
-          completedTasks++;
-        } else if (t.dueDate && new Date(t.dueDate) < now) {
-          tasksByStatus["OVERDUE"]++;
-          overdueTasks++;
-        } else if (t.reviewStatus === "PENDING") {
-          tasksByStatus["IN_REVIEW"]++;
-        } else {
-          tasksByStatus["IN_PROGRESS"]++;
-        }
-      });
-
+      const agg = taskAgg[0] ?? { total: 0, completed: 0, overdue: 0, inReview: 0, inProgress: 0 };
       const totalProjects = projectCounts.reduce((s, r) => s + Number(r.cnt), 0);
       const activeProjects = projectCounts.filter(r => r.status === "ACTIVE").reduce((s, r) => s + Number(r.cnt), 0);
 
       const payload = {
-        totalTasks: taskRows.length,
-        completedTasks,
-        overdueTasks,
+        totalTasks:      Number(agg.total),
+        completedTasks:  Number(agg.completed),
+        overdueTasks:    Number(agg.overdue),
         activeProjects,
         totalProjects,
-        totalClients: clientCount,
-        teamSize: teamCount,
+        totalClients:    clientCount,
+        teamSize:        teamCount,
         totalHoursLogged: Math.round(hoursRow / 60),
-        presentToday: attendanceRow,
-        tasksByStatus,
+        presentToday:    attendanceRow,
+        tasksByStatus: {
+          DONE:        Number(agg.completed),
+          OVERDUE:     Number(agg.overdue),
+          IN_REVIEW:   Number(agg.inReview),
+          IN_PROGRESS: Number(agg.inProgress),
+          TODO:        0,
+        },
       };
       reportCache.set(cacheKey, payload, REPORT_TTL_MS);
       res.json(payload);
@@ -1155,33 +1147,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const end = endDate ? new Date(endDate as string) : new Date();
 
-      const taskConditions = [
+      const baseWhere = [
         eq(tasksTable.agencyId, me.agencyId),
         ...(projectId ? [eq(tasksTable.projectId, projectId as string)] : []),
       ];
-      // Fetch only the two timestamp columns needed for bucketing
-      const taskRows = await db.select({
-        createdAt: tasksTable.createdAt,
-        completedAt: tasksTable.completedAt,
-      }).from(tasksTable).where(and(...taskConditions));
 
-      // Build daily buckets
+      // Two DB-level GROUP BY date_trunc queries — no full row fetch
+      const [createdRows, completedRows] = await Promise.all([
+        db.select({
+          day: sql<string>`(date_trunc('day', ${tasksTable.createdAt}) AT TIME ZONE 'UTC')::date::text`,
+          cnt: count(),
+        })
+          .from(tasksTable)
+          .where(and(...baseWhere, gte(tasksTable.createdAt, start), lte(tasksTable.createdAt, end)))
+          .groupBy(sql`date_trunc('day', ${tasksTable.createdAt})`),
+
+        db.select({
+          day: sql<string>`(date_trunc('day', ${tasksTable.completedAt}) AT TIME ZONE 'UTC')::date::text`,
+          cnt: count(),
+        })
+          .from(tasksTable)
+          .where(and(...baseWhere, isNotNull(tasksTable.completedAt), gte(tasksTable.completedAt, start), lte(tasksTable.completedAt, end)))
+          .groupBy(sql`date_trunc('day', ${tasksTable.completedAt})`),
+      ]);
+
+      // Seed every day in range then fill from DB results
       const buckets: Record<string, { created: number; completed: number }> = {};
       const cursor = new Date(start);
       while (cursor <= end) {
         buckets[cursor.toISOString().slice(0, 10)] = { created: 0, completed: 0 };
         cursor.setDate(cursor.getDate() + 1);
       }
-      taskRows.forEach(t => {
-        if (t.createdAt) {
-          const d = new Date(t.createdAt).toISOString().slice(0, 10);
-          if (buckets[d]) buckets[d].created++;
-        }
-        if (t.completedAt) {
-          const d = new Date(t.completedAt).toISOString().slice(0, 10);
-          if (buckets[d]) buckets[d].completed++;
-        }
-      });
+      createdRows.forEach(r => { if (r.day && buckets[r.day]) buckets[r.day].created = Number(r.cnt); });
+      completedRows.forEach(r => { if (r.day && buckets[r.day]) buckets[r.day].completed = Number(r.cnt); });
+
       const payload = Object.entries(buckets).map(([date, v]) => ({ date, ...v }));
       reportCache.set(cacheKey, payload, REPORT_TTL_MS);
       res.json(payload);
@@ -1243,57 +1242,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const start = startDate ? new Date(startDate as string) : null;
       const end = endDate ? new Date(endDate as string) : null;
 
-      // Build time-entry conditions
-      const timeConditions = [eq(timeEntries.agencyId, me.agencyId)];
-      if (start) timeConditions.push(gte(timeEntries.startTime, start));
-      if (end) timeConditions.push(lte(timeEntries.startTime, end));
+      // Build WHERE conditions for each query
+      const timeWhere = [
+        eq(timeEntries.agencyId, me.agencyId),
+        ...(start ? [gte(timeEntries.startTime, start)] : []),
+        ...(end ? [lte(timeEntries.startTime, end)] : []),
+      ];
+      const taskWhere = [
+        eq(tasksTable.agencyId, me.agencyId),
+        ...(start ? [gte(tasksTable.createdAt, start)] : []),
+        ...(end ? [lte(tasksTable.createdAt, end)] : []),
+      ];
 
-      // Build task-assignee conditions
-      const taskConditions = [eq(tasksTable.agencyId, me.agencyId)];
-      if (start) taskConditions.push(gte(tasksTable.createdAt, start));
-      if (end) taskConditions.push(lte(tasksTable.createdAt, end));
-
-      const [agencyUsers, timeRows, assigneeRows] = await Promise.all([
+      // All three queries use SQL-level GROUP BY / SUM / COUNT — no per-row iteration in Node
+      const [agencyUsers, timeGrouped, taskGrouped] = await Promise.all([
         storage.getAgencyUsers(me.agencyId),
 
-        // Only fetch userId + durationMinutes from time_entries
-        db.select({ userId: timeEntries.userId, durationMinutes: timeEntries.durationMinutes })
+        // SUM(duration_minutes) per user in SQL
+        db.select({
+          userId: timeEntries.userId,
+          totalMinutes: sql<number>`COALESCE(SUM(${timeEntries.durationMinutes}), 0)`,
+        })
           .from(timeEntries)
-          .where(and(...timeConditions)),
+          .where(and(...timeWhere))
+          .groupBy(timeEntries.userId),
 
-        // Assignee rows already filtered at DB level
+        // COUNT(*) and COUNT(completed_at) per user in SQL
         db.select({
           userId: taskAssignees.userId,
-          completedAt: tasksTable.completedAt,
+          assigned:  count(),
+          completed: sql<number>`COUNT(${tasksTable.completedAt})`,
         })
           .from(taskAssignees)
-          .innerJoin(tasksTable, and(eq(taskAssignees.taskId, tasksTable.id), ...taskConditions)),
+          .innerJoin(tasksTable, and(eq(taskAssignees.taskId, tasksTable.id), ...taskWhere))
+          .groupBy(taskAssignees.userId),
       ]);
 
-      const userMap: Record<string, { name: string; minutes: number; tasksAssigned: number; tasksCompleted: number }> = {};
-      agencyUsers.forEach(u => {
-        userMap[u.id] = { name: u.name ?? u.email, minutes: 0, tasksAssigned: 0, tasksCompleted: 0 };
-      });
+      // Merge DB results — O(users) only, no per-row scan
+      const minutesByUser = Object.fromEntries(timeGrouped.map(r => [r.userId, Number(r.totalMinutes)]));
+      const tasksByUser   = Object.fromEntries(taskGrouped.map(r => [r.userId, { assigned: Number(r.assigned), completed: Number(r.completed) }]));
 
-      timeRows.forEach(e => {
-        if (e.userId && userMap[e.userId]) {
-          userMap[e.userId].minutes += e.durationMinutes ?? 0;
-        }
-      });
-
-      assigneeRows.forEach(row => {
-        if (!userMap[row.userId]) return;
-        userMap[row.userId].tasksAssigned += 1;
-        if (row.completedAt) userMap[row.userId].tasksCompleted += 1;
-      });
-
-      const payload = Object.entries(userMap)
-        .map(([userId, v]) => {
-          const hours = Math.round(v.minutes / 60 * 10) / 10;
-          const tasksPerHour = v.minutes > 0
-            ? Math.round((v.tasksCompleted / (v.minutes / 60)) * 10) / 10
-            : 0;
-          return { userId, name: v.name, hours, tasksAssigned: v.tasksAssigned, tasksCompleted: v.tasksCompleted, tasksPerHour };
+      const payload = agencyUsers
+        .map(u => {
+          const minutes    = minutesByUser[u.id] ?? 0;
+          const assigned   = tasksByUser[u.id]?.assigned ?? 0;
+          const completed  = tasksByUser[u.id]?.completed ?? 0;
+          const hours      = Math.round(minutes / 60 * 10) / 10;
+          const tasksPerHour = minutes > 0 ? Math.round((completed / (minutes / 60)) * 10) / 10 : 0;
+          return { userId: u.id, name: u.name ?? u.email, hours, tasksAssigned: assigned, tasksCompleted: completed, tasksPerHour };
         })
         .filter(u => u.hours > 0 || u.tasksAssigned > 0)
         .sort((a, b) => b.tasksCompleted - a.tasksCompleted || b.hours - a.hours);
