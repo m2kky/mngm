@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,7 +41,6 @@ export default function Pages() {
   // Drag-and-drop state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const dragCounter = useRef(0);
 
   const agencyId = currentUser?.agencyId;
 
@@ -85,10 +84,7 @@ export default function Pages() {
       queryClient.invalidateQueries({ queryKey: ["/api/pages", agencyId] });
       if (parentId) setExpandedIds(prev => new Set(Array.from(prev).concat(parentId)));
     },
-    onError: (err: any) => {
-      const msg = err?.message ?? "Failed to move page";
-      toast({ title: msg, variant: "destructive" });
-    },
+    onError: () => toast({ title: "Failed to move page", variant: "destructive" }),
   });
 
   const deletePage = useMutation({
@@ -166,13 +162,11 @@ export default function Pages() {
     }
     setDraggingId(null);
     setDragOverId(null);
-    dragCounter.current = 0;
   };
 
   const handleDragEnd = () => {
     setDraggingId(null);
     setDragOverId(null);
-    dragCounter.current = 0;
   };
 
   const TreeItem = ({
