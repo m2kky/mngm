@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import {
+  type User,
   insertUserSchema,
   insertAgencySchema,
   insertClientSchema,
@@ -27,7 +27,7 @@ if (!JWT_SECRET) {
 }
 const JWT_EXPIRES_IN = "30d";
 
-function toSafeUser(user: Record<string, unknown>) {
+function toSafeUser(user: User): Omit<User, "passwordHash"> {
   const { passwordHash: _h, ...safe } = user;
   return safe;
 }
@@ -93,7 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         theme: "system",
       });
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.status(201).json({ token, user: toSafeUser(user as any) });
+      res.status(201).json({ token, user: toSafeUser(user) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -114,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.json({ token, user: toSafeUser(user as any) });
+      res.json({ token, user: toSafeUser(user) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -124,7 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUser(req.userId);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(toSafeUser(user as any));
+      res.json(toSafeUser(user));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -140,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const user = await storage.getUser(req.params.id);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(toSafeUser(user as any));
+      res.json(toSafeUser(user));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -155,7 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertUserSchema.partial().omit({ passwordHash: true }).parse(req.body);
       const user = await storage.updateUser(req.params.id, data);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(toSafeUser(user as any));
+      res.json(toSafeUser(user));
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -164,7 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/agencies/:agencyId/users", requireAuth, async (req, res) => {
     try {
       const users = await storage.getAgencyUsers(req.params.agencyId);
-      res.json(users.map((u) => toSafeUser(u as any)));
+      res.json(users.map((u) => toSafeUser(u)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
