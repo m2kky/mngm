@@ -145,13 +145,10 @@ export function BlockEditor({ block, onUpdate, onDelete }: BlockEditorProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="p-1 h-6 w-6 hover:bg-white/10">
-              {blockTypeIcons[block.type as keyof typeof blockTypeIcons] ? (
-                <span className="h-3 w-3">
-                  {blockTypeIcons[block.type as keyof typeof blockTypeIcons]({ className: "h-3 w-3 text-gray-400" })}
-                </span>
-              ) : (
-                <Type className="h-3 w-3 text-gray-400" />
-              )}
+              {(() => {
+                const Icon = blockTypeIcons[block.type as keyof typeof blockTypeIcons] ?? Type;
+                return <Icon className="h-3 w-3 text-gray-400" />;
+              })()}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
