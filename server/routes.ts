@@ -769,26 +769,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { startDate, endDate, projectId } = req.query;
       const [allTasks, allProjects, allClients, allUsers, allTimeEntries, attendance] = await Promise.all([
-        storage.getTasks({ agencyId: me.agencyId }),
+        storage.getTasks({ agencyId: me.agencyId, projectId: projectId as string }),
         storage.getProjects({ agencyId: me.agencyId }),
         storage.getClients({ agencyId: me.agencyId }),
         storage.getAgencyUsers(me.agencyId),
         storage.getTimeEntries({ agencyId: me.agencyId }),
         storage.getAttendanceRecords({ agencyId: me.agencyId }),
       ]);
+      const now = new Date();
+      const start = startDate ? new Date(startDate as string) : null;
+      const end = endDate ? new Date(endDate as string) : null;
+      const filteredTasks = allTasks.filter(t => {
+        if (!start && !end) return true;
+        const ref = t.createdAt ? new Date(t.createdAt) : null;
+        if (!ref) return true;
+        if (start && ref < start) return false;
+        if (end && ref > end) return false;
+        return true;
+      });
       const totalMinutes = allTimeEntries.reduce((sum, e) => sum + (e.durationMinutes ?? 0), 0);
-      const tasksByStatus: Record<string, number> = {};
-      allTasks.forEach((t: any) => {
-        const s = t.status ?? "TODO";
-        tasksByStatus[s] = (tasksByStatus[s] ?? 0) + 1;
+      const tasksByStatus: Record<string, number> = { TODO: 0, IN_PROGRESS: 0, IN_REVIEW: 0, DONE: 0, OVERDUE: 0 };
+      filteredTasks.forEach(t => {
+        if (t.completedAt) {
+          tasksByStatus["DONE"]++;
+        } else if (t.dueDate && new Date(t.dueDate) < now) {
+          tasksByStatus["OVERDUE"]++;
+        } else if (t.reviewStatus === "PENDING") {
+          tasksByStatus["IN_REVIEW"]++;
+        } else {
+          tasksByStatus["IN_PROGRESS"]++;
+        }
       });
       const today = new Date().toISOString().slice(0, 10);
       const presentToday = attendance.filter(r => r.date === today && r.checkInAt).length;
       res.json({
-        totalTasks: allTasks.length,
-        completedTasks: allTasks.filter(t => t.completedAt).length,
-        overdueTasks: allTasks.filter(t => t.dueDate && !t.completedAt && new Date(t.dueDate) < new Date()).length,
+        totalTasks: filteredTasks.length,
+        completedTasks: filteredTasks.filter(t => t.completedAt).length,
+        overdueTasks: filteredTasks.filter(t => t.dueDate && !t.completedAt && new Date(t.dueDate) < now).length,
         activeProjects: allProjects.filter((p: any) => p.status === "ACTIVE").length,
         totalProjects: allProjects.length,
         totalClients: allClients.length,
@@ -797,6 +816,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
         presentToday,
         tasksByStatus,
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/reports/tasks-over-time", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { startDate, endDate, projectId } = req.query;
+      const tasks = await storage.getTasks({ agencyId: me.agencyId, projectId: projectId as string });
+      const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const end = endDate ? new Date(endDate as string) : new Date();
+      // Build daily buckets
+      const buckets: Record<string, { created: number; completed: number }> = {};
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        buckets[cursor.toISOString().slice(0, 10)] = { created: 0, completed: 0 };
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      tasks.forEach(t => {
+        if (t.createdAt) {
+          const d = new Date(t.createdAt).toISOString().slice(0, 10);
+          if (buckets[d]) buckets[d].created++;
+        }
+        if (t.completedAt) {
+          const d = new Date(t.completedAt).toISOString().slice(0, 10);
+          if (buckets[d]) buckets[d].completed++;
+        }
+      });
+      res.json(Object.entries(buckets).map(([date, v]) => ({ date, ...v })));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/reports/tasks-by-project", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { startDate, endDate } = req.query;
+      const [tasks, projects] = await Promise.all([
+        storage.getTasks({ agencyId: me.agencyId }),
+        storage.getProjects({ agencyId: me.agencyId }),
+      ]);
+      const start = startDate ? new Date(startDate as string) : null;
+      const end = endDate ? new Date(endDate as string) : null;
+      const filtered = tasks.filter(t => {
+        if (!start && !end) return true;
+        const ref = t.createdAt ? new Date(t.createdAt) : null;
+        if (!ref) return true;
+        if (start && ref < start) return false;
+        if (end && ref > end) return false;
+        return true;
+      });
+      const projectMap: Record<string, { name: string; total: number; completed: number }> = {};
+      projects.forEach(p => { projectMap[p.id] = { name: p.name, total: 0, completed: 0 }; });
+      filtered.forEach(t => {
+        if (!projectMap[t.projectId]) return;
+        projectMap[t.projectId].total++;
+        if (t.completedAt) projectMap[t.projectId].completed++;
+      });
+      res.json(
+        Object.entries(projectMap)
+          .map(([id, v]) => ({ projectId: id, ...v }))
+          .filter(p => p.total > 0)
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 10),
+      );
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/reports/time-by-member", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const { startDate, endDate } = req.query;
+      const [entries, agencyUsers] = await Promise.all([
+        storage.getTimeEntries({ agencyId: me.agencyId }),
+        storage.getAgencyUsers(me.agencyId),
+      ]);
+      const start = startDate ? new Date(startDate as string) : null;
+      const end = endDate ? new Date(endDate as string) : null;
+      const filtered = entries.filter(e => {
+        if (!start && !end) return true;
+        const ref = e.startedAt ? new Date(e.startedAt) : null;
+        if (!ref) return true;
+        if (start && ref < start) return false;
+        if (end && ref > end) return false;
+        return true;
+      });
+      const userMap: Record<string, { name: string; minutes: number }> = {};
+      agencyUsers.forEach(u => { userMap[u.id] = { name: u.name ?? u.email, minutes: 0 }; });
+      filtered.forEach(e => {
+        if (e.userId && userMap[e.userId]) {
+          userMap[e.userId].minutes += e.durationMinutes ?? 0;
+        }
+      });
+      res.json(
+        Object.entries(userMap)
+          .map(([userId, v]) => ({ userId, name: v.name, hours: Math.round(v.minutes / 60 * 10) / 10 }))
+          .filter(u => u.hours > 0)
+          .sort((a, b) => b.hours - a.hours),
+      );
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
