@@ -19,6 +19,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshUserProfile: () => Promise<void>;
+  setUserProfile: (profile: User | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,6 +53,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!auth) throw new Error("Firebase is not configured.");
     await signOut(auth);
     setUserProfile(null);
+  };
+
+  const refreshUserProfile = async () => {
+    if (!currentUser || !db) return;
+    try {
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setUserProfile({
+          id: currentUser.uid,
+          name: data.name ?? null,
+          email: currentUser.email ?? data.email ?? "",
+          emailVerified: currentUser.emailVerified,
+          image: data.image ?? data.profilePicture ?? null,
+          status: data.status ?? "ACTIVE",
+          language: data.language ?? "en",
+          theme: data.theme ?? "system",
+          lastLoginAt: data.lastLoginAt?.toDate() ?? null,
+          role: data.role ?? "TEAM_MEMBER",
+          agencyId: data.agencyId ?? data.workspaceId ?? null,
+          createdAt: data.createdAt?.toDate() ?? new Date(),
+          updatedAt: data.updatedAt?.toDate() ?? new Date(),
+        } as User);
+      }
+    } catch (error) {
+      console.error("Error refreshing user profile:", error);
+    }
   };
 
   useEffect(() => {
@@ -104,6 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signInWithGoogle,
     logout,
+    refreshUserProfile,
+    setUserProfile,
   };
 
   return (
