@@ -1516,6 +1516,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const data = insertPageSchema.parse({ ...req.body, agencyId: me.agencyId, createdById: me.id });
+      // Validate parentId belongs to the same agency
+      if (data.parentId) {
+        const parent = await storage.getPage(data.parentId);
+        if (!parent) return res.status(400).json({ error: "Parent page not found" });
+        if (parent.agencyId !== me.agencyId) return res.status(403).json({ error: "Parent page belongs to a different workspace" });
+      }
       const page = await storage.createPage(data);
       res.status(201).json(page);
     } catch (e: any) {

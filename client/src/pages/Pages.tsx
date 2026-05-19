@@ -469,7 +469,7 @@ export default function Pages() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pages.find(p => p.id === deletingPageId)?.isFolder
-                ? "All pages inside this folder will be moved to the root. The folder itself will be permanently deleted."
+                ? "The folder will be permanently deleted. Its direct children will be moved to the root level; deeper nested items remain under their immediate parent."
                 : "This will permanently delete the page and all its content. This action cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
