@@ -82,6 +82,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
+  // ─── Global CLIENT role guard ─────────────────────────────────────────────────
+  // CLIENT role users may only access /api/auth/*, /api/client-portal/*, and the
+  // public invitation lookup. All other API routes return 403.
+  const CLIENT_ALLOWED_PREFIXES = [
+    "/api/auth/",
+    "/api/client-portal/",
+    "/api/invitations/by-token/",
+    "/api/chat/channels", // allowed — hardened per-endpoint to restrict to portal channel
+  ];
+
+  app.use(async (req: any, res: any, next: any) => {
+    if (!req.path.startsWith("/api/")) return next();
+    // Check if this path is allowed for CLIENT role
+    const isClientSafe = CLIENT_ALLOWED_PREFIXES.some((p) => req.path.startsWith(p));
+    if (isClientSafe) return next();
+
+    // Extract token if present
+    const header = req.headers.authorization as string | undefined;
+    if (!header?.startsWith("Bearer ")) return next();
+
+    try {
+      const payload = jwt.verify(header.slice(7), JWT_SECRET) as { userId: string };
+      const user = await storage.getUser(payload.userId);
+      if (user?.role === "CLIENT") {
+        return res.status(403).json({ error: "Access denied. Please use the client portal." });
+      }
+    } catch {
+      // Bad token — let individual requireAuth handlers report the error
+    }
+    next();
+  });
+
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   app.post("/api/auth/register", async (req, res) => {
@@ -759,11 +791,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update a member's role (admin only)
+  // Update a member's role (admin only); optionally assign clientId when role=CLIENT
   app.patch("/api/agencies/:agencyId/members/:userId/role", requireAuth, async (req: any, res) => {
     try {
       if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
-      const { role } = req.body;
+      const { role, clientId } = req.body;
       const parsedRole = assignableRoleSchema.safeParse(role);
       if (!parsedRole.success) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${ASSIGNABLE_ROLES.join(", ")}` });
@@ -776,7 +808,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (target.role === "OWNER") {
         return res.status(403).json({ error: "Cannot change the workspace owner's role" });
       }
-      const updated = await storage.updateUser(req.params.userId, { role: parsedRole.data });
+      const updateData: any = { role: parsedRole.data };
+      // When assigning CLIENT role, allow linking to a specific client entity
+      if (parsedRole.data === "CLIENT" && clientId) {
+        const client = await storage.getClient(clientId);
+        if (!client || client.agencyId !== req.params.agencyId) {
+          return res.status(400).json({ error: "Client not found in this agency" });
+        }
+        updateData.clientId = clientId;
+      } else if (parsedRole.data !== "CLIENT") {
+        // Remove client link when switching away from CLIENT role
+        updateData.clientId = null;
+      }
+      const updated = await storage.updateUser(req.params.userId, updateData);
+      res.json(toSafeUser(updated!));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Set or update a CLIENT user's linked client entity (admin only)
+  app.patch("/api/agencies/:agencyId/members/:userId/client-link", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      const { clientId } = req.body;
+      const target = await storage.getUser(req.params.userId);
+      if (!target || target.agencyId !== req.params.agencyId) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      if (target.role !== "CLIENT") {
+        return res.status(400).json({ error: "User must have CLIENT role to be linked to a client" });
+      }
+      if (clientId) {
+        const client = await storage.getClient(clientId);
+        if (!client || client.agencyId !== req.params.agencyId) {
+          return res.status(400).json({ error: "Client not found in this agency" });
+        }
+      }
+      const updated = await storage.updateUser(req.params.userId, { clientId: clientId ?? null });
       res.json(toSafeUser(updated!));
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1117,6 +1186,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Client Portal ───────────────────────────────────────────────────────────
+
+  // Middleware: only users with role=CLIENT that are linked to a client entity
+  const requireClientRole = async (req: any, res: any, next: any) => {
+    const me = await storage.getUser(req.userId);
+    if (!me) return res.status(401).json({ error: "Unauthorized" });
+    if (me.role !== "CLIENT") return res.status(403).json({ error: "Client role required" });
+    if (!me.agencyId) return res.status(403).json({ error: "No agency associated" });
+    if (!me.clientId) return res.status(403).json({ error: "No client linked. Ask your agency to assign you to a client." });
+    req.me = me;
+    next();
+  };
+
+  // Returns projects scoped to the authenticated client's clientId
+  app.get("/api/client-portal/projects", requireAuth, requireClientRole, async (req: any, res) => {
+    try {
+      const projects = await storage.getProjects({ clientId: req.me.clientId });
+      res.json(projects);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Returns tasks for a project, only if that project belongs to this client
+  app.get("/api/client-portal/tasks", requireAuth, requireClientRole, async (req: any, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      // Verify the project belongs to THIS client (not just any agency project)
+      const project = await storage.getProject(projectId as string);
+      if (!project || project.clientId !== req.me.clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const tasks = await storage.getTasks({ projectId: projectId as string, agencyId: req.me.agencyId });
+      res.json(tasks);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Returns only CLIENT_FILE assets tagged to this specific client
+  app.get("/api/client-portal/files", requireAuth, requireClientRole, async (req: any, res) => {
+    try {
+      const allFiles = await storage.getFileAssets({ clientId: req.me.clientId });
+      // Only expose files explicitly shared with the client (context=CLIENT_FILE)
+      const clientFiles = allFiles.filter((f: any) => f.context === "CLIENT_FILE");
+      res.json(clientFiles);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Returns (or auto-creates) a per-client message channel keyed by clientId
+  app.get("/api/client-portal/channel", requireAuth, requireClientRole, async (req: any, res) => {
+    try {
+      const channelName = `client-portal-${req.me.clientId}`;
+      let channels = await storage.getChatChannels(req.me.agencyId);
+      let clientChannel = channels.find((c: any) => c.name === channelName);
+      if (!clientChannel) {
+        clientChannel = await storage.createChatChannel({
+          name: channelName,
+          description: "Direct messaging between client and the agency team",
+          type: "channel",
+          agencyId: req.me.agencyId,
+          createdById: req.me.id,
+        });
+      }
+      res.json(clientChannel);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ─── Chat ────────────────────────────────────────────────────────────────────
 
   app.get("/api/chat/channels", requireAuth, async (req: any, res) => {
@@ -1124,7 +1266,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       let channels = await storage.getChatChannels(me.agencyId);
-      // Auto-create a General channel if none exist
+      // CLIENT role: can only see their own dedicated portal channel
+      if (me.role === "CLIENT") {
+        const portalChannelName = `client-portal-${me.clientId}`;
+        const portalChannel = channels.filter((c: any) => c.name === portalChannelName);
+        return res.json(portalChannel);
+      }
+      // Auto-create a General channel if none exist for internal team
       if (channels.length === 0) {
         const general = await storage.createChatChannel({
           name: "general",
@@ -1145,6 +1293,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const me = await storage.getUser(req.userId);
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      // CLIENT role cannot create channels
+      if (me.role === "CLIENT") return res.status(403).json({ error: "Forbidden" });
       const data = insertChatChannelSchema.parse({ ...req.body, agencyId: me.agencyId, createdById: me.id });
       const channel = await storage.createChatChannel(data);
       res.status(201).json(channel);
@@ -1159,6 +1309,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const channel = await storage.getChatChannel(req.params.channelId);
       if (!channel || channel.agencyId !== me.agencyId) return res.status(404).json({ error: "Channel not found" });
+      // CLIENT role: can only access their own portal channel
+      if (me.role === "CLIENT") {
+        const portalChannelName = `client-portal-${me.clientId}`;
+        if (channel.name !== portalChannelName) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
       const messages = await storage.getChatMessages(req.params.channelId, 200);
       // Attach sender info
       const userIds = Array.from(new Set(messages.map((m: any) => m.userId)));
@@ -1187,6 +1344,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
       const channel = await storage.getChatChannel(req.params.channelId);
       if (!channel || channel.agencyId !== me.agencyId) return res.status(404).json({ error: "Channel not found" });
+      // CLIENT role: can only post to their own portal channel
+      if (me.role === "CLIENT") {
+        const portalChannelName = `client-portal-${me.clientId}`;
+        if (channel.name !== portalChannelName) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
       const data = insertChatMessageSchema.parse({ content: req.body.content, channelId: req.params.channelId, userId: me.id });
       const message = await storage.createChatMessage(data);
       const enriched = {

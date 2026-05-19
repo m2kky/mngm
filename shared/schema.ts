@@ -61,9 +61,11 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   role: roleEnum("role").notNull().default("TEAM_MEMBER"),
   agencyId: text("agency_id").references((): AnyPgColumn => agencies.id, { onDelete: "set null" }),
+  clientId: text("client_id").references((): AnyPgColumn => clients.id, { onDelete: "set null" }),
 }, (t) => [
   index("users_agency_id_idx").on(t.agencyId),
   index("users_status_idx").on(t.status),
+  index("users_client_id_idx").on(t.clientId),
 ]);
 
 export const agencies = pgTable("agencies", {

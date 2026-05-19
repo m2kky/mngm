@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { useEffect } from "react";
+import { Switch, Route, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -17,26 +18,51 @@ import Reports from "@/pages/Reports";
 import Files from "@/pages/Files";
 import Pages from "@/pages/Pages";
 import Team from "@/pages/Team";
+import ClientPortalPage from "@/pages/ClientPortalPage";
 import NotFound from "@/pages/not-found";
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
+    </div>
+  );
+}
+
+/** Route only accessible to users with role=CLIENT */
+function ClientRoute({ children }: { children: React.ReactNode }) {
   const { currentUser, userProfile, loading } = useAuth();
+  const [, navigate] = useLocation();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!loading && currentUser && userProfile?.agencyId && userProfile.role !== "CLIENT") {
+      navigate("/dashboard");
+    }
+  }, [loading, currentUser, userProfile, navigate]);
 
-  if (!currentUser) {
-    return <Login />;
-  }
+  if (loading) return <LoadingSpinner />;
+  if (!currentUser) return <Login />;
+  if (!userProfile?.agencyId) return <Onboarding />;
+  if (userProfile.role !== "CLIENT") return null;
 
-  if (!userProfile?.agencyId) {
-    return <Onboarding />;
-  }
+  return <>{children}</>;
+}
+
+/** Route for internal team members — redirects CLIENT role to the client portal */
+function InternalRoute({ children }: { children: React.ReactNode }) {
+  const { currentUser, userProfile, loading } = useAuth();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!loading && currentUser && userProfile?.agencyId && userProfile.role === "CLIENT") {
+      navigate("/client-portal");
+    }
+  }, [loading, currentUser, userProfile, navigate]);
+
+  if (loading) return <LoadingSpinner />;
+  if (!currentUser) return <Login />;
+  if (!userProfile?.agencyId) return <Onboarding />;
+  if (userProfile.role === "CLIENT") return null;
 
   return <>{children}</>;
 }
@@ -45,50 +71,55 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/client-portal">
+        <ClientRoute>
+          <ClientPortalPage />
+        </ClientRoute>
+      </Route>
       <Route path="/">
-        <ProtectedRoute>
+        <InternalRoute>
           <Dashboard />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/dashboard">
-        <ProtectedRoute>
+        <InternalRoute>
           <Dashboard />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/tasks">
-        <ProtectedRoute>
+        <InternalRoute>
           <Tasks />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/pages">
-        <ProtectedRoute>
+        <InternalRoute>
           <Pages />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/files">
-        <ProtectedRoute>
+        <InternalRoute>
           <Files />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/chat">
-        <ProtectedRoute>
+        <InternalRoute>
           <Chat />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/attendance">
-        <ProtectedRoute>
+        <InternalRoute>
           <Attendance />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/reports">
-        <ProtectedRoute>
+        <InternalRoute>
           <Reports />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route path="/team">
-        <ProtectedRoute>
+        <InternalRoute>
           <Team />
-        </ProtectedRoute>
+        </InternalRoute>
       </Route>
       <Route component={NotFound} />
     </Switch>
