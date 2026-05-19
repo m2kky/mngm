@@ -19,8 +19,18 @@ import {
   insertInvitationSchema,
 } from "@shared/schema";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "workit-os-dev-secret-change-in-production";
+const isDev = process.env.NODE_ENV !== "production";
+const JWT_SECRET = process.env.JWT_SECRET ?? (isDev ? "workit-os-dev-secret-do-not-use-in-production" : "");
+if (!JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable must be set in production.");
+  process.exit(1);
+}
 const JWT_EXPIRES_IN = "30d";
+
+function toSafeUser(user: Record<string, unknown>) {
+  const { passwordHash: _h, ...safe } = user;
+  return safe;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -83,8 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         theme: "system",
       });
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      const { passwordHash: _h, ...safeUser } = user;
-      res.status(201).json({ token, user: safeUser });
+      res.status(201).json({ token, user: toSafeUser(user as any) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -105,8 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      const { passwordHash: _h, ...safeUser } = user;
-      res.json({ token, user: safeUser });
+      res.json({ token, user: toSafeUser(user as any) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -116,8 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUser(req.userId);
       if (!user) return res.status(404).json({ error: "User not found" });
-      const { passwordHash: _h, ...safeUser } = user;
-      res.json(safeUser);
+      res.json(toSafeUser(user as any));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -125,32 +132,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Users ──────────────────────────────────────────────────────────────────
 
-  app.get("/api/users/:id", requireAuth, async (req, res) => {
+  app.get("/api/users/:id", requireAuth, async (req: any, res) => {
     try {
+      // Only allow users to fetch their own profile
+      if (req.params.id !== req.userId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const user = await storage.getUser(req.params.id);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(user);
+      res.json(toSafeUser(user as any));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/users", async (req, res) => {
+  app.put("/api/users/:id", requireAuth, async (req: any, res) => {
     try {
-      const data = insertUserSchema.parse(req.body);
-      const user = await storage.createUser(data);
-      res.status(201).json(user);
-    } catch (e: any) {
-      res.status(400).json({ error: e.message });
-    }
-  });
-
-  app.put("/api/users/:id", requireAuth, async (req, res) => {
-    try {
-      const data = insertUserSchema.partial().parse(req.body);
+      // Only allow users to update their own profile
+      if (req.params.id !== req.userId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const data = insertUserSchema.partial().omit({ passwordHash: true }).parse(req.body);
       const user = await storage.updateUser(req.params.id, data);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(user);
+      res.json(toSafeUser(user as any));
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -159,7 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/agencies/:agencyId/users", requireAuth, async (req, res) => {
     try {
       const users = await storage.getAgencyUsers(req.params.agencyId);
-      res.json(users);
+      res.json(users.map((u) => toSafeUser(u as any)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
