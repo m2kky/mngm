@@ -1725,6 +1725,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Global search ───────────────────────────────────────────────────────────
+  // Lightweight aggregator used by the command palette and header search. Returns
+  // up to `limit` results across tasks, pages, files, channels, and users.
+
+  app.get("/api/search", requireAuth, async (req: any, res) => {
+    try {
+      const q = ((req.query.q as string | undefined) ?? "").trim().toLowerCase();
+      const limit = Math.min(parseInt((req.query.limit as string) ?? "8", 10) || 8, 25);
+      const user = await storage.getUser(req.userId);
+      if (!user?.agencyId) return res.json({ tasks: [], pages: [], files: [], channels: [], users: [] });
+      const agencyId = user.agencyId;
+
+      if (!q) {
+        return res.json({ tasks: [], pages: [], files: [], channels: [], users: [] });
+      }
+
+      const [tasksList, pagesList, filesList, channelsList, usersList] = await Promise.all([
+        storage.getTasks({ agencyId }),
+        storage.getPages(agencyId),
+        storage.getFileAssets({ agencyId }),
+        storage.getChatChannels(agencyId),
+        storage.getAgencyUsers(agencyId),
+      ]);
+
+      const matches = (s: string | null | undefined) => !!s && s.toLowerCase().includes(q);
+
+      res.json({
+        tasks: tasksList
+          .filter((t) => matches(t.title) || matches(t.description))
+          .slice(0, limit)
+          .map((t) => ({ id: t.id, title: t.title, projectId: t.projectId, type: t.type })),
+        pages: pagesList
+          .filter((p) => matches(p.title))
+          .slice(0, limit)
+          .map((p) => ({ id: p.id, title: p.title, isFolder: p.isFolder, parentId: p.parentId })),
+        files: filesList
+          .filter((f) => matches(f.fileName))
+          .slice(0, limit)
+          .map((f) => ({ id: f.id, fileName: f.fileName, mimeType: f.mimeType, fileUrl: f.fileUrl })),
+        channels: channelsList
+          .filter((c) => matches(c.name) || matches(c.description))
+          .slice(0, limit)
+          .map((c) => ({ id: c.id, name: c.name, description: c.description })),
+        users: usersList
+          .filter((u) => matches(u.name) || matches(u.email))
+          .slice(0, limit)
+          .map((u) => ({ id: u.id, name: u.name, email: u.email, image: u.image, role: u.role })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ─── Dashboard ───────────────────────────────────────────────────────────────
 
   app.get("/api/dashboard/stats", requireAuth, async (req, res) => {

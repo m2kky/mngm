@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { PageShell } from "@/components/layout/PageShell";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -931,6 +932,16 @@ export default function Tasks() {
     enabled: !!effectiveProjectId,
   });
 
+  // Open the create dialog automatically when navigated with #new (e.g. from
+  // the global command palette / QuickCreate). Clears the hash afterward.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#new") return;
+    if (stages.length === 0) return;
+    setCreateModal({ open: true, stageId: stages[0].id });
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [stages]);
+
   // Fetch tasks
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: [`/api/tasks?projectId=${effectiveProjectId}`],
@@ -1022,114 +1033,108 @@ export default function Tasks() {
   const hasStages   = stages.length > 0;
   const anyFilter   = filterPriority !== "ALL" || filterType !== "ALL" || filterAssignee !== "ALL";
 
+  const activeProject = projects.find((p) => p.id === effectiveProjectId);
+
+  const taskCrumbs = [
+    { label: "Work" },
+    { label: "Tasks", href: "/tasks" },
+    ...(activeProject ? [{ label: activeProject.name }] : []),
+  ];
+
+  const taskSecondaryActions = (
+    <>
+      {hasProjects && (
+        <Select value={effectiveProjectId} onValueChange={setSelectedProjectId}>
+          <SelectTrigger className="w-52 h-9 text-sm" data-testid="select-tasks-project">
+            <SelectValue placeholder="Select project" />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      <Button
+        size="sm" variant="outline"
+        className="h-9 gap-1"
+        onClick={() => setCreateProjectOpen(true)}
+        data-testid="button-new-project"
+      >
+        <FolderPlus className="w-3.5 h-3.5" /> New project
+      </Button>
+    </>
+  );
+
+  const taskPrimaryAction = hasStages ? (
+    <Button
+      size="sm"
+      className="h-9"
+      onClick={() => setCreateModal({ open: true, stageId: stages[0]?.id ?? "" })}
+      data-testid="button-new-task"
+    >
+      <Plus className="w-4 h-4 mr-1" /> New task
+    </Button>
+  ) : null;
+
+  const taskFilterTabs = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Filter className="w-4 h-4 text-muted-foreground" />
+      <Select value={filterAssignee} onValueChange={setFilterAssignee}>
+        <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-filter-assignee">
+          <SelectValue placeholder="Assignee" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All members</SelectItem>
+          {agencyMembers.map((u) => (
+            <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={filterPriority} onValueChange={setFilterPriority}>
+        <SelectTrigger className="h-8 w-32 text-xs" data-testid="select-filter-priority">
+          <SelectValue placeholder="Priority" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All priorities</SelectItem>
+          {PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select value={filterType} onValueChange={setFilterType}>
+        <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-filter-type">
+          <SelectValue placeholder="Type" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All types</SelectItem>
+          {TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {anyFilter && (
+        <>
+          <Button
+            variant="ghost" size="sm"
+            className="h-8 px-2 text-xs text-muted-foreground"
+            onClick={() => { setFilterPriority("ALL"); setFilterType("ALL"); setFilterAssignee("ALL"); }}
+          >
+            <X className="w-3 h-3 mr-1" /> Clear
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {filteredTasks.length} of {allTasks.length} tasks
+          </span>
+        </>
+      )}
+    </div>
+  );
+
   return (
+    <PageShell
+      fullBleed
+      breadcrumbs={taskCrumbs}
+      title={activeProject?.name ?? "Tasks"}
+      description={activeProject ? "Kanban board" : "Plan and track work across projects"}
+      secondaryActions={taskSecondaryActions}
+      primaryAction={taskPrimaryAction}
+      tabs={taskFilterTabs}
+    >
     <div className="flex flex-col h-full">
-      {/* ── Top bar ── */}
-      <div className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-4">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Kanban className="w-5 h-5 text-indigo-500" />
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">Tasks</h1>
-
-            {hasProjects && (
-              <Select value={effectiveProjectId} onValueChange={setSelectedProjectId}>
-                <SelectTrigger className="w-52 h-8 text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                  <SelectValue placeholder="Select project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-
-            <Button
-              size="sm" variant="outline"
-              className="h-8 text-xs gap-1"
-              onClick={() => setCreateProjectOpen(true)}
-            >
-              <FolderPlus className="w-3.5 h-3.5" /> New project
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
-
-            <Select value={filterAssignee} onValueChange={setFilterAssignee}>
-              <SelectTrigger className="h-8 w-36 text-xs">
-                <SelectValue placeholder="Assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All members</SelectItem>
-                {agencyMembers.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filterPriority} onValueChange={setFilterPriority}>
-              <SelectTrigger className="h-8 w-32 text-xs">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All priorities</SelectItem>
-                {PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="h-8 w-28 text-xs">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All types</SelectItem>
-                {TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-
-            {anyFilter && (
-              <Button
-                variant="ghost" size="sm"
-                className="h-8 px-2 text-xs text-slate-500"
-                onClick={() => { setFilterPriority("ALL"); setFilterType("ALL"); setFilterAssignee("ALL"); }}
-              >
-                <X className="w-3 h-3 mr-1" /> Clear
-              </Button>
-            )}
-
-            {hasStages && (
-              <Button
-                size="sm" className="h-8 text-xs"
-                onClick={() => setCreateModal({ open: true, stageId: stages[0]?.id ?? "" })}
-              >
-                <Plus className="w-4 h-4 mr-1" /> New task
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {anyFilter && (
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs text-slate-400">Filtered:</span>
-            {filterAssignee !== "ALL" && (
-              <Badge variant="secondary" className="text-xs">
-                {agencyMembers.find((u) => u.id === filterAssignee)?.name ?? filterAssignee}
-              </Badge>
-            )}
-            {filterPriority !== "ALL" && (
-              <Badge variant="secondary" className="text-xs">
-                {PRIORITY_CONFIG[filterPriority as keyof typeof PRIORITY_CONFIG]?.label}
-              </Badge>
-            )}
-            {filterType !== "ALL" && (
-              <Badge variant="secondary" className="text-xs">
-                {TYPE_CONFIG[filterType as keyof typeof TYPE_CONFIG]?.label}
-              </Badge>
-            )}
-            <span className="text-xs text-slate-400">— {filteredTasks.length} of {allTasks.length} tasks</span>
-          </div>
-        )}
-      </div>
-
       {/* ── Board area ── */}
       <div className="flex-1 overflow-auto p-6">
         {isLoading ? (
@@ -1247,5 +1252,6 @@ export default function Tasks() {
         />
       )}
     </div>
+    </PageShell>
   );
 }

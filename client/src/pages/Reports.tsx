@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { PageShell } from "@/components/layout/PageShell";
 
 interface ReportOverview {
   totalTasks: number;
@@ -306,27 +307,26 @@ export default function Reports() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6 max-w-6xl mx-auto">
-        <div className="h-8 w-40 bg-muted animate-pulse rounded" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i}><CardContent className="pt-5 h-24 bg-muted/30 animate-pulse" /></Card>
-          ))}
+      <PageShell
+        breadcrumbs={[{ label: "Insights" }, { label: "Reports" }]}
+        title="Reports & Analytics"
+        description="Track performance, productivity, and project health"
+      >
+        <div className="space-y-6 max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Card key={i}><CardContent className="pt-5 h-24 bg-muted/30 animate-pulse" /></Card>
+            ))}
+          </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
-  return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Reports & Analytics</h1>
-          <p className="text-muted-foreground text-sm mt-1">Track performance, productivity, and project health</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={dateRange} onValueChange={v => setDateRange(v as DateRange)}>
+  const headerActions = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <Filter className="h-4 w-4 text-muted-foreground" />
+      <Select value={dateRange} onValueChange={v => setDateRange(v as DateRange)}>
             <SelectTrigger className="w-36 h-9">
               <SelectValue />
             </SelectTrigger>
@@ -366,9 +366,17 @@ export default function Reports() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      </div>
+    </div>
+  );
 
+  return (
+    <PageShell
+      breadcrumbs={[{ label: "Insights" }, { label: "Reports" }]}
+      title="Reports & Analytics"
+      description="Track performance, productivity, and project health"
+      primaryAction={headerActions}
+    >
+      <div className="space-y-6 max-w-6xl mx-auto">
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -710,6 +718,7 @@ export default function Reports() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PageShell>
   );
 }

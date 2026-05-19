@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/layout/PageShell";
 
 interface AttendanceRecord {
   id: string;
@@ -95,15 +96,12 @@ export default function Attendance() {
   const recentRecords = records.slice(0, 30);
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Attendance</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          {now.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-        </p>
-      </div>
-
+    <PageShell
+      breadcrumbs={[{ label: "Insights" }, { label: "Attendance" }]}
+      title="Attendance"
+      description={now.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+    >
+      <div className="space-y-6 max-w-4xl mx-auto">
       {/* Today's status card */}
       <Card className="border-2 border-primary/10">
         <CardContent className="pt-6">
@@ -226,6 +224,7 @@ export default function Attendance() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PageShell>
   );
 }

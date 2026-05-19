@@ -19,8 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme, ACCENT_COLORS, type Theme, type Language, type AccentColor } from "@/contexts/ThemeContext";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageShell } from "@/components/layout/PageShell";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -478,7 +477,6 @@ function AppearanceSettings() {
 
 export default function Settings() {
   const { userProfile } = useAuth();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const agencyId = userProfile?.agencyId;
   const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
@@ -496,25 +494,22 @@ export default function Settings() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
-      <Header onToggleSidebar={() => setSidebarCollapsed((c) => !c)} />
-      <div className="flex">
-        <Sidebar isCollapsed={sidebarCollapsed} />
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Settings2 className="h-6 w-6 text-indigo-500" />
-                Settings
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {isAdmin
-                  ? "Manage your workspace configuration and personal preferences."
-                  : "Manage your personal preferences."}
-              </p>
-            </div>
-
-            {isAdmin ? (
+    <PageShell
+      breadcrumbs={[{ label: "Workspace" }, { label: "Settings" }]}
+      title={
+        <span className="flex items-center gap-2">
+          <Settings2 className="h-6 w-6 text-indigo-500" />
+          Settings
+        </span>
+      }
+      description={
+        isAdmin
+          ? "Manage your workspace configuration and personal preferences."
+          : "Manage your personal preferences."
+      }
+    >
+      <div className="max-w-2xl mx-auto">
+        {isAdmin ? (
               <Tabs defaultValue="general">
                 <TabsList className="mb-6">
                   <TabsTrigger value="general">General</TabsTrigger>
@@ -558,12 +553,10 @@ export default function Settings() {
                 <div className="text-sm text-muted-foreground border border-border rounded-lg px-4 py-3 bg-muted/30">
                   You can manage your personal preferences below. Contact an admin to change workspace-level settings.
                 </div>
-                <AppearanceSettings />
-              </div>
-            )}
+            <AppearanceSettings />
           </div>
-        </main>
+        )}
       </div>
-    </div>
+    </PageShell>
   );
 }

@@ -1,15 +1,13 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { 
-  Home, 
-  CheckSquare, 
-  FileText, 
-  Folder, 
-  MessageCircle, 
-  Clock, 
+import {
+  Home,
+  CheckSquare,
+  FileText,
+  Folder,
+  MessageCircle,
+  Clock,
   BarChart3,
-  ChevronDown,
   Users,
   Building,
   Settings2,
@@ -17,247 +15,254 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useSidebarUI } from "@/contexts/SidebarUIContext";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { QuickCreateButton } from "./QuickCreate";
+import { useShortcut } from "@/lib/shortcuts";
 
 interface SidebarProps {
   isCollapsed: boolean;
 }
 
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: Home },
-  { name: "Tasks", href: "/tasks", icon: CheckSquare },
-  { name: "Pages", href: "/pages", icon: FileText },
-  { name: "Files", href: "/files", icon: Folder },
-  { name: "Chat", href: "/chat", icon: MessageCircle },
-  { name: "Attendance", href: "/attendance", icon: Clock },
-  { name: "Reports", href: "/reports", icon: BarChart3 },
-  { name: "Team", href: "/team", icon: Users },
+type NavItem = { name: string; href: string; icon: typeof Home; shortcut?: string };
+type NavSection = { id: string; label: string; items: NavItem[] };
+
+const SECTIONS: NavSection[] = [
+  {
+    id: "workspace",
+    label: "Workspace",
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: Home, shortcut: "G D" },
+    ],
+  },
+  {
+    id: "work",
+    label: "Work",
+    items: [
+      { name: "Tasks", href: "/tasks", icon: CheckSquare, shortcut: "G T" },
+      { name: "Pages", href: "/pages", icon: FileText, shortcut: "G P" },
+      { name: "Files", href: "/files", icon: Folder, shortcut: "G F" },
+    ],
+  },
+  {
+    id: "communication",
+    label: "Communication",
+    items: [
+      { name: "Chat", href: "/chat", icon: MessageCircle, shortcut: "G C" },
+    ],
+  },
+  {
+    id: "insights",
+    label: "Insights",
+    items: [
+      { name: "Attendance", href: "/attendance", icon: Clock, shortcut: "G A" },
+      { name: "Reports", href: "/reports", icon: BarChart3, shortcut: "G R" },
+      { name: "Team", href: "/team", icon: Users, shortcut: "G M" },
+    ],
+  },
 ];
 
-const adminNavigation = [
-  { name: "Settings", href: "/settings", icon: Settings2 },
-];
+const ADMIN_SECTION: NavSection = {
+  id: "admin",
+  label: "Admin",
+  items: [{ name: "Settings", href: "/settings", icon: Settings2, shortcut: "G S" }],
+};
 
-export function Sidebar({ isCollapsed }: SidebarProps) {
+function NavLinks({
+  collapsed,
+  sections,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  sections: NavSection[];
+  onNavigate?: () => void;
+}) {
   const [location] = useLocation();
-  const { userProfile, loading: authLoading } = useAuth();
-  const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
-
-  const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
-
-  interface Member {
-    id: string;
-    name: string | null;
-    email: string;
-    role: string | null;
-    image: string | null;
-  }
-
-  const agencyId = userProfile?.agencyId;
-  const {
-    data: teamMembers = [],
-    isLoading: teamLoading,
-    isError: teamError,
-  } = useQuery<Member[]>({
-    queryKey: ["/api/agencies", agencyId, "users"],
-    queryFn: async () => {
-      const res = await fetch(`/api/agencies/${agencyId}/users`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("wk_token")}` },
-      });
-      if (!res.ok) throw new Error(`Failed to load team: ${res.status}`);
-      const data = await res.json();
-      if (!Array.isArray(data)) throw new Error("Unexpected response shape");
-      return data as Member[];
-    },
-    enabled: !!agencyId,
-  });
-
   return (
-    <aside
-      className={cn(
-        "transition-all duration-300 p-4 space-y-4",
-        isCollapsed ? "w-20" : "w-64"
-      )}
-    >
-      <GlassCard className="p-4">
-        {/* Workspace Selector */}
-        {!isCollapsed && (
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Workspace
-              </h3>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="text-xs text-indigo-500 hover:text-indigo-600 p-0 h-auto"
-              >
-                Switch
-              </Button>
-            </div>
-            <div className="flex items-center space-x-2 p-2 rounded-lg bg-white/10">
-              <div className="w-6 h-6 rounded bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center">
-                <Building className="w-3 h-3 text-white" />
-              </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                Digital Agency Pro
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation Menu */}
-        <nav className="space-y-1">
-          {navigation.map((item) => {
-            const isActive = location === item.href;
-            const Icon = item.icon;
-            
-            return (
-              <Link key={item.name} href={item.href}>
+    <nav className="space-y-3">
+      {sections.map((section) => (
+        <div key={section.id}>
+          {!collapsed && (
+            <h4 className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              {section.label}
+            </h4>
+          )}
+          <div className="space-y-0.5">
+            {section.items.map((item) => {
+              const isActive = location === item.href;
+              const Icon = item.icon;
+              const button = (
                 <Button
                   variant={isActive ? "secondary" : "ghost"}
                   className={cn(
-                    "w-full justify-start transition-colors duration-200",
+                    "w-full justify-start transition-colors duration-200 h-9",
                     isActive && "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
                     !isActive && "hover:bg-white/10",
-                    isCollapsed && "px-2"
+                    collapsed && "px-2 justify-center",
                   )}
                 >
-                  <Icon className={cn("h-4 w-4", !isCollapsed && "mr-3")} />
-                  {!isCollapsed && (
+                  <Icon className={cn("h-4 w-4", !collapsed && "mr-3")} />
+                  {!collapsed && (
                     <>
                       <span>{item.name}</span>
-                      {item.name === "Tasks" && (
-                        <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-                          3
+                      {item.shortcut && (
+                        <span className="ml-auto text-[10px] font-mono text-muted-foreground opacity-60">
+                          {item.shortcut}
                         </span>
-                      )}
-                      {item.name === "Chat" && (
-                        <span className="ml-auto w-2 h-2 bg-green-500 rounded-full" />
                       )}
                     </>
                   )}
                 </Button>
-              </Link>
-            );
-          })}
-
-          {/* Admin-only navigation */}
-          {isAdmin && (
-            <div className={cn("pt-2 mt-2 border-t border-white/10")}>
-              {adminNavigation.map((item) => {
-                const isActive = location === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link key={item.name} href={item.href}>
-                    <Button
-                      variant={isActive ? "secondary" : "ghost"}
-                      className={cn(
-                        "w-full justify-start transition-colors duration-200",
-                        isActive && "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
-                        !isActive && "hover:bg-white/10",
-                        isCollapsed && "px-2"
-                      )}
-                    >
-                      <Icon className={cn("h-4 w-4", !isCollapsed && "mr-3")} />
-                      {!isCollapsed && <span>{item.name}</span>}
-                    </Button>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </nav>
-
-        {/* Team Section */}
-        {!isCollapsed && (
-          <div className="mt-6 pt-6 border-t border-white/10">
-            <Button
-              variant="ghost"
-              onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
-              className="w-full justify-between p-0 mb-3 h-auto hover:bg-transparent"
-            >
-              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Team
-              </h4>
-              <ChevronDown 
-                className={cn(
-                  "h-3 w-3 transition-transform",
-                  workspaceExpanded && "transform rotate-180"
-                )}
-              />
-            </Button>
-            
-            {workspaceExpanded && (
-              <div className="space-y-2">
-                {(authLoading || teamLoading) && (
-                  <>
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="flex items-center space-x-2 p-2 animate-pulse">
-                        <div className="w-6 h-6 rounded-full bg-white/20" />
-                        <div className="flex-1 space-y-1">
-                          <div className="h-2.5 bg-white/20 rounded w-24" />
-                          <div className="h-2 bg-white/10 rounded w-16" />
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {!authLoading && !teamLoading && teamError && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Unable to load team members</p>
-                )}
-                {!authLoading && !teamLoading && !teamError && teamMembers.length === 0 && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">No team members yet</p>
-                )}
-                {!authLoading && !teamLoading && !teamError && teamMembers.slice(0, 8).map((member) => {
-                  const initials = (member.name ?? member.email ?? "?")
-                    .split(" ")
-                    .map((n: string) => n[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2);
-                  const roleLabel = member.role
-                    ? member.role.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
-                    : "";
-                  const isSelf = member.id === userProfile?.id;
-                  return (
-                    <div
-                      key={member.id}
-                      className="flex items-center space-x-2 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200 cursor-pointer"
-                    >
-                      <Avatar className="w-6 h-6">
-                        <AvatarImage src={member.image ?? ""} />
-                        <AvatarFallback className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs">
-                          {initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                          {member.name ?? member.email}{isSelf ? " (you)" : ""}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {roleLabel}
-                        </p>
-                      </div>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full flex-shrink-0",
-                        isSelf ? "bg-green-500" : "bg-gray-400"
-                      )} />
-                    </div>
-                  );
-                })}
-                {!authLoading && !teamLoading && !teamError && teamMembers.length > 8 && (
-                  <Link href="/team">
-                    <p className="text-xs text-indigo-500 hover:text-indigo-600 px-2 py-1 cursor-pointer">
-                      +{teamMembers.length - 8} more members
-                    </p>
-                  </Link>
-                )}
-              </div>
-            )}
+              );
+              const linked = (
+                <Link key={item.name} href={item.href}>
+                  <a onClick={onNavigate}>{button}</a>
+                </Link>
+              );
+              return collapsed ? (
+                <Tooltip key={item.name}>
+                  <TooltipTrigger asChild>{linked}</TooltipTrigger>
+                  <TooltipContent side="right">
+                    {item.name}
+                    {item.shortcut && (
+                      <span className="ml-2 text-xs text-muted-foreground">{item.shortcut}</span>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                linked
+              );
+            })}
           </div>
-        )}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+function SidebarInner({
+  collapsed,
+  agencyName,
+  onNavigate,
+  isAdmin,
+}: {
+  collapsed: boolean;
+  agencyName: string;
+  onNavigate?: () => void;
+  isAdmin: boolean;
+}) {
+  const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
+  return (
+    <>
+      {!collapsed && (
+        <div className="mb-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 px-2">
+            Workspace
+          </h3>
+          <div className="flex items-center space-x-2 p-2 rounded-lg bg-white/10">
+            <div className="w-6 h-6 rounded bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center shrink-0">
+              <Building className="w-3 h-3 text-white" />
+            </div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+              {agencyName}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4">
+        <QuickCreateButton collapsed={collapsed} />
+      </div>
+
+      <NavLinks collapsed={collapsed} sections={sections} onNavigate={onNavigate} />
+    </>
+  );
+}
+
+export function Sidebar({ isCollapsed }: SidebarProps) {
+  const [, navigate] = useLocation();
+  const { userProfile } = useAuth();
+  const { mobileOpen, setMobileOpen, closeMobile, toggleCollapsed } = useSidebarUI();
+  const isMobile = useIsMobile();
+
+  const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
+  const agencyId = userProfile?.agencyId;
+
+  const { data: agency } = useQuery<{ id: string; name: string }>({
+    queryKey: ["/api/agencies", agencyId],
+    queryFn: async () => {
+      const res = await fetch(`/api/agencies/${agencyId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("wk_token") ?? ""}` },
+      });
+      if (!res.ok) throw new Error("Failed to load agency");
+      return res.json();
+    },
+    enabled: !!agencyId,
+  });
+  const agencyName = agency?.name ?? "Workspace";
+
+  // Layout shortcut: "[" toggles the sidebar.
+  useShortcut({
+    id: "layout.toggle-sidebar",
+    keys: "[",
+    label: "Toggle sidebar",
+    group: "Layout",
+    handler: () => {
+      if (isMobile) setMobileOpen(!mobileOpen);
+      else toggleCollapsed();
+    },
+  });
+
+  // Navigation shortcuts: G then <key>.
+  useShortcut({ id: "nav.dashboard", keys: "g+d", sequence: ["g", "d"], label: "Go to Dashboard", group: "Navigation", handler: () => navigate("/dashboard") });
+  useShortcut({ id: "nav.tasks", keys: "g+t", sequence: ["g", "t"], label: "Go to Tasks", group: "Navigation", handler: () => navigate("/tasks") });
+  useShortcut({ id: "nav.pages", keys: "g+p", sequence: ["g", "p"], label: "Go to Pages", group: "Navigation", handler: () => navigate("/pages") });
+  useShortcut({ id: "nav.files", keys: "g+f", sequence: ["g", "f"], label: "Go to Files", group: "Navigation", handler: () => navigate("/files") });
+  useShortcut({ id: "nav.chat", keys: "g+c", sequence: ["g", "c"], label: "Go to Chat", group: "Navigation", handler: () => navigate("/chat") });
+  useShortcut({ id: "nav.attendance", keys: "g+a", sequence: ["g", "a"], label: "Go to Attendance", group: "Navigation", handler: () => navigate("/attendance") });
+  useShortcut({ id: "nav.reports", keys: "g+r", sequence: ["g", "r"], label: "Go to Reports", group: "Navigation", handler: () => navigate("/reports") });
+  useShortcut({ id: "nav.team", keys: "g+m", sequence: ["g", "m"], label: "Go to Team", group: "Navigation", handler: () => navigate("/team") });
+  useShortcut({ id: "nav.settings", keys: "g+s", sequence: ["g", "s"], label: "Go to Settings", group: "Navigation", handler: () => navigate("/settings") });
+
+  if (isMobile) {
+    return (
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-72 p-4 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation</SheetTitle>
+          </SheetHeader>
+          <SidebarInner
+            collapsed={false}
+            agencyName={agencyName}
+            isAdmin={isAdmin}
+            onNavigate={closeMobile}
+          />
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <aside
+      className={cn(
+        "transition-all duration-300 p-4 space-y-4 hidden md:block",
+        isCollapsed ? "w-20" : "w-64",
+      )}
+    >
+      <GlassCard className="p-4">
+        <SidebarInner collapsed={isCollapsed} agencyName={agencyName} isAdmin={isAdmin} />
       </GlassCard>
     </aside>
   );

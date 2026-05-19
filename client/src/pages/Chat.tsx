@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/layout/PageShell";
 
 interface Channel {
   id: string;
@@ -184,19 +185,37 @@ export default function Chat() {
     return groups;
   }, []);
 
-  return (
-    <div className="flex h-full overflow-hidden bg-background">
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="w-60 flex-shrink-0 border-r bg-muted/20 flex flex-col">
-        <div className="px-4 py-3 border-b">
-          <h2 className="font-semibold text-sm text-foreground flex items-center gap-2">
-            <MessageCircle className="h-4 w-4 text-primary" />
-            Team Chat
-          </h2>
-        </div>
+  const chatCrumbs = [
+    { label: "Communication" },
+    { label: "Chat", href: "/chat" },
+    ...(activeChannel ? [{ label: `#${activeChannel.name}` }] : []),
+  ];
 
+  return (
+    <PageShell
+      fullBleed
+      breadcrumbs={chatCrumbs}
+      title={activeChannel ? `#${activeChannel.name}` : "Chat"}
+      description={
+        activeChannel?.description ??
+        (channels.length > 0 ? "Select a channel to start chatting" : "Create your first channel")
+      }
+      back={activeChannel ? { label: "Chat", href: "/chat" } : undefined}
+      primaryAction={
+        <Button
+          size="sm"
+          onClick={() => setShowNewChannel(true)}
+          data-testid="button-new-channel"
+        >
+          <Plus className="h-4 w-4 mr-1" /> New channel
+        </Button>
+      }
+    >
+    <div className="flex h-full min-h-[70vh] overflow-hidden bg-background rounded-xl border">
+      {/* ── Channel list sidebar ────────────────────────────────────────── */}
+      <aside className="w-60 flex-shrink-0 border-r bg-muted/20 flex flex-col">
         <ScrollArea className="flex-1 py-2">
-          <div className="px-3 mb-1 flex items-center justify-between">
+          <div className="px-3 mb-1 mt-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Channels
             </span>
@@ -386,5 +405,6 @@ export default function Chat() {
         </DialogContent>
       </Dialog>
     </div>
+    </PageShell>
   );
 }

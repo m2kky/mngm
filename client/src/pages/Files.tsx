@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageShell } from "@/components/layout/PageShell";
 import { Upload, File, FileImage, FileText, FileArchive, Trash2, Download, FolderOpen, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,32 +106,32 @@ export default function Files() {
   const totalSize = files.reduce((s, f) => s + f.fileSize, 0);
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Files</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            {files.length} file{files.length !== 1 ? "s" : ""} · {formatBytes(totalSize)} used
-          </p>
-        </div>
-        <Button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="gap-2"
-        >
-          <Upload className="h-4 w-4" />
-          {uploading ? "Uploading…" : "Upload Files"}
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={e => uploadFiles(e.target.files)}
-        />
-      </div>
-
+    <PageShell
+      breadcrumbs={[{ label: "Work" }, { label: "Files" }]}
+      title="Files"
+      description={`${files.length} file${files.length !== 1 ? "s" : ""} · ${formatBytes(totalSize)} used`}
+      primaryAction={
+        <>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="gap-2"
+            data-testid="button-upload-files"
+          >
+            <Upload className="h-4 w-4" />
+            {uploading ? "Uploading…" : "Upload Files"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={e => uploadFiles(e.target.files)}
+          />
+        </>
+      }
+    >
+      <div className="space-y-6 max-w-5xl mx-auto">
       {/* Drop zone + search */}
       <div
         className={cn(
@@ -217,6 +218,7 @@ export default function Files() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </PageShell>
   );
 }

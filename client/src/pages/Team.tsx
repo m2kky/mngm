@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Users, UserPlus, MoreVertical, Shield, UserX, UserCheck,
@@ -25,8 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageShell } from "@/components/layout/PageShell";
 import { cn } from "@/lib/utils";
 
 interface Member {
@@ -92,11 +91,18 @@ export default function Team() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [inviteOpen, setInviteOpen] = useState(false);
+
+  // QuickCreate / palette deep-link: /team#invite opens the invite dialog.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#invite") return;
+    setInviteOpen(true);
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("TEAM_MEMBER");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -238,34 +244,29 @@ export default function Team() {
   const pendingInvites = invitations.filter((i) => i.status === "PENDING");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
-      <Header onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
-      <div className="flex">
-        <Sidebar isCollapsed={sidebarCollapsed} />
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-6xl mx-auto space-y-6">
-            {/* Page header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Users className="h-6 w-6 text-indigo-500" />
-                  Team Members
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
-                  {members.length} member{members.length !== 1 ? "s" : ""} in this workspace
-                </p>
-              </div>
-              {isAdmin && (
-                <Button
-                  onClick={() => setInviteOpen(true)}
-                  className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Invite Member
-                </Button>
-              )}
-            </div>
-
+    <PageShell
+      breadcrumbs={[{ label: "Insights" }, { label: "Team" }]}
+      title={
+        <span className="flex items-center gap-2">
+          <Users className="h-6 w-6 text-indigo-500" />
+          Team Members
+        </span>
+      }
+      description={`${members.length} member${members.length !== 1 ? "s" : ""} in this workspace`}
+      primaryAction={
+        isAdmin && (
+          <Button
+            onClick={() => setInviteOpen(true)}
+            className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
+            data-testid="button-invite-member"
+          >
+            <UserPlus className="h-4 w-4 mr-2" />
+            Invite Member
+          </Button>
+        )
+      }
+    >
+      <div className="max-w-6xl mx-auto space-y-6">
             {/* Search + filters */}
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative w-64">
@@ -504,8 +505,6 @@ export default function Team() {
                 </CardContent>
               </Card>
             )}
-          </div>
-        </main>
       </div>
 
       {/* Invite Member Dialog */}
@@ -592,6 +591,6 @@ export default function Team() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

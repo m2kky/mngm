@@ -4,9 +4,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SidebarUIProvider } from "./contexts/SidebarUIContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "./hooks/useAuth";
+import { ShortcutsProvider } from "@/lib/shortcuts";
+import { CommandPaletteProvider } from "@/components/layout/CommandPalette";
+import { QuickCreateProvider, useQuickCreate } from "@/components/layout/QuickCreate";
+import { ShortcutsHelp } from "@/components/layout/ShortcutsHelp";
 
 import Dashboard from "@/pages/Dashboard";
 import Login from "@/pages/Login";
@@ -30,7 +35,6 @@ function LoadingSpinner() {
   );
 }
 
-/** Route only accessible to users with role=CLIENT */
 function ClientRoute({ children }: { children: React.ReactNode }) {
   const { currentUser, userProfile, loading } = useAuth();
   const [, navigate] = useLocation();
@@ -49,7 +53,6 @@ function ClientRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Route for internal team members — redirects CLIENT role to the client portal */
 function InternalRoute({ children }: { children: React.ReactNode }) {
   const { currentUser, userProfile, loading } = useAuth();
   const [, navigate] = useLocation();
@@ -132,14 +135,34 @@ function Router() {
   );
 }
 
+function PaletteShellBridge({ children }: { children: React.ReactNode }) {
+  // Inside QuickCreateProvider, we wire the palette's quick-create callback to
+  // the same triggers exposed elsewhere in the app.
+  const { trigger } = useQuickCreate();
+  return (
+    <CommandPaletteProvider onQuickCreate={trigger}>
+      <ShortcutsHelp />
+      {children}
+    </CommandPaletteProvider>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
+          <TooltipProvider delayDuration={200}>
+            <SidebarUIProvider>
+              <ShortcutsProvider>
+                <QuickCreateProvider>
+                  <PaletteShellBridge>
+                    <Toaster />
+                    <Router />
+                  </PaletteShellBridge>
+                </QuickCreateProvider>
+              </ShortcutsProvider>
+            </SidebarUIProvider>
           </TooltipProvider>
         </AuthProvider>
       </ThemeProvider>

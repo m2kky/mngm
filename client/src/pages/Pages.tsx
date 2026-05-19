@@ -30,11 +30,13 @@ import {
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { PageShell } from "@/components/layout/PageShell";
 
 export default function Pages() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [pendingNewPage, setPendingNewPage] = useState(false);
   const [deletingPageId, setDeletingPageId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -55,6 +57,16 @@ export default function Pages() {
       if (first) setSelectedPageId(first.id);
     }
   }, [pages, selectedPageId]);
+
+  // QuickCreate / palette deep-link: /pages#new opens a new page immediately.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#new") return;
+    if (!agencyId || pendingNewPage) return;
+    setPendingNewPage(true);
+    createPage.mutate({});
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [agencyId, pendingNewPage]);
 
   const createPage = useMutation({
     mutationFn: (opts: { parentId?: string; isFolder?: boolean }) =>
@@ -341,35 +353,67 @@ export default function Pages() {
   };
 
   const rootItems = childrenOf(null);
+  const selectedAny = pages.find((p) => p.id === selectedPageId) ?? null;
+
+  // Build hierarchical breadcrumbs from the selected page's parent chain.
+  const pageCrumbs: { label: string; href?: string }[] = [
+    { label: "Work" },
+    { label: "Pages", href: "/pages" },
+  ];
+  if (selectedAny) {
+    const chain: Page[] = [];
+    let cursor: Page | undefined = selectedAny;
+    while (cursor) {
+      chain.unshift(cursor);
+      cursor = cursor.parentId ? pages.find((p) => p.id === cursor!.parentId) : undefined;
+    }
+    // Skip the leaf — it becomes the title.
+    for (const p of chain.slice(0, -1)) {
+      pageCrumbs.push({ label: p.title || "Untitled", href: `/pages?id=${p.id}` });
+    }
+  }
+
+  const parentOfSelected = selectedAny?.parentId
+    ? pages.find((p) => p.id === selectedAny.parentId) ?? null
+    : null;
 
   return (
-    <div className="flex h-full min-h-screen">
+    <PageShell
+      fullBleed
+      breadcrumbs={pageCrumbs}
+      title={selectedAny ? selectedAny.title || "Untitled" : "Pages"}
+      description={selectedAny?.isFolder ? "Folder" : selectedAny ? "Page" : "Create and organise documentation"}
+      back={
+        parentOfSelected
+          ? { label: parentOfSelected.title || "Pages", href: `/pages?id=${parentOfSelected.id}` }
+          : undefined
+      }
+      secondaryActions={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => createPage.mutate({ isFolder: true })}
+          disabled={!agencyId}
+          data-testid="button-new-folder"
+        >
+          <FolderPlus className="h-4 w-4 mr-1" /> New folder
+        </Button>
+      }
+      primaryAction={
+        <Button
+          size="sm"
+          onClick={() => createPage.mutate({})}
+          disabled={createPage.isPending || !agencyId}
+          data-testid="button-new-page"
+        >
+          {createPage.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+          New page
+        </Button>
+      }
+    >
+    <div className="flex h-[calc(100vh-220px)] min-h-[60vh] rounded-xl border bg-background overflow-hidden">
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 border-r border-white/10 bg-white/5 dark:bg-black/10 backdrop-blur-sm flex flex-col">
-        <div className="p-3 border-b border-white/10 flex items-center gap-1">
-          <h2 className="font-semibold text-gray-800 dark:text-gray-200 flex-1 text-sm">Pages</h2>
-          <Button
-            size="sm" variant="ghost"
-            className="h-7 w-7 p-0 hover:bg-white/10"
-            onClick={() => createPage.mutate({ isFolder: true })}
-            disabled={!agencyId}
-            title="New folder"
-          >
-            <FolderPlus className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm" variant="ghost"
-            className="h-7 w-7 p-0 hover:bg-white/10"
-            onClick={() => createPage.mutate({})}
-            disabled={createPage.isPending || !agencyId}
-            title="New page"
-          >
-            {createPage.isPending
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Plus className="h-4 w-4" />}
-          </Button>
-        </div>
-
+      <div className="w-64 flex-shrink-0 border-r bg-muted/20 flex flex-col">
         {/* Root drop zone — drag here to move to root */}
         <div
           className={`flex-1 overflow-y-auto p-1.5 ${
@@ -479,5 +523,6 @@ export default function Pages() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </PageShell>
   );
 }
