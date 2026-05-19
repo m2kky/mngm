@@ -1531,6 +1531,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!existing) return res.status(404).json({ error: "Page not found" });
       if (existing.agencyId !== me.agencyId) return res.status(403).json({ error: "Forbidden" });
       const data = insertPageSchema.pick({ title: true, content: true, parentId: true, isFolder: true }).partial().parse(req.body);
+
+      // Validate parentId: must belong to same agency, not self, no ancestry cycle
+      if (data.parentId !== undefined && data.parentId !== null) {
+        if (data.parentId === req.params.id) {
+          return res.status(400).json({ error: "A page cannot be its own parent" });
+        }
+        const parent = await storage.getPage(data.parentId);
+        if (!parent) return res.status(400).json({ error: "Parent page not found" });
+        if (parent.agencyId !== me.agencyId) return res.status(403).json({ error: "Parent page belongs to a different workspace" });
+        // Ancestry cycle check: walk up the parent's chain; if we hit req.params.id it's a cycle
+        let ancestor = parent;
+        while (ancestor.parentId) {
+          if (ancestor.parentId === req.params.id) {
+            return res.status(400).json({ error: "Moving this page here would create a circular hierarchy" });
+          }
+          const next = await storage.getPage(ancestor.parentId);
+          if (!next) break;
+          ancestor = next;
+        }
+      }
+
       const page = await storage.updatePage(req.params.id, data);
       res.json(page);
     } catch (e: any) {
