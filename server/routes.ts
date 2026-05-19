@@ -1222,7 +1222,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = Object.entries(userMap)
         .map(([userId, v]) => {
           const hours = Math.round(v.minutes / 60 * 10) / 10;
-          const tasksPerHour = hours > 0 ? Math.round((v.tasksCompleted / hours) * 10) / 10 : 0;
+          // Use raw minutes for rate precision to avoid double-rounding drift
+          const tasksPerHour = v.minutes > 0
+            ? Math.round((v.tasksCompleted / (v.minutes / 60)) * 10) / 10
+            : 0;
           return {
             userId,
             name: v.name,
