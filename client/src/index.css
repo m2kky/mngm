@@ -418,3 +418,49 @@
   );
   background-size: 200% 100%;
 }
+
+@media print {
+  body.printing-reports > *:not(#root) {
+    display: none !important;
+  }
+
+  body.printing-reports nav,
+  body.printing-reports aside,
+  body.printing-reports header,
+  body.printing-reports [data-sidebar],
+  body.printing-reports [role="navigation"],
+  body.printing-reports .no-print {
+    display: none !important;
+  }
+
+  body.printing-reports #root {
+    display: block !important;
+  }
+
+  body.printing-reports .max-w-6xl {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
+  }
+
+  body.printing-reports .shadow,
+  body.printing-reports .shadow-sm,
+  body.printing-reports .shadow-md {
+    box-shadow: none !important;
+  }
+
+  body.printing-reports button,
+  body.printing-reports [role="button"] {
+    display: none !important;
+  }
+
+  body.printing-reports .recharts-wrapper,
+  body.printing-reports .recharts-responsive-container {
+    page-break-inside: avoid;
+  }
+
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+}

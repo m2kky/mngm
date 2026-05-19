@@ -6,13 +6,16 @@ import {
 } from "recharts";
 import {
   CheckCircle2, Clock, Briefcase, Users, TrendingUp, AlertTriangle,
-  CalendarCheck, Filter,
+  CalendarCheck, Filter, Download, FileText, FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -121,6 +124,30 @@ function formatDateLabel(dateStr: string, range: DateRange): string {
   return d.toLocaleDateString("en", { month: "short", day: "numeric" });
 }
 
+function downloadCSV(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const FORMULA_CHARS = /^[=+\-@\t\r]/;
+
+function sanitizeCSVValue(v: string | number): string {
+  const s = String(v ?? "");
+  const safe = FORMULA_CHARS.test(s) ? `'${s}` : s;
+  return safe.includes(",") || safe.includes('"') || safe.includes("\n")
+    ? `"${safe.replace(/"/g, '""')}"`
+    : safe;
+}
+
+function toCSVRow(values: (string | number)[]) {
+  return values.map(sanitizeCSVValue).join(",");
+}
+
 export default function Reports() {
   const { userProfile } = useAuth();
   const [dateRange, setDateRange] = useState<DateRange>("30d");
@@ -214,6 +241,63 @@ export default function Reports() {
     ? Math.round(((overview.totalTasks - overview.overdueTasks) / overview.totalTasks) * 100)
     : 0;
 
+  const handleExportCSV = () => {
+    const lines: string[] = [];
+    const rangeLabel = dateRange === "all" ? "All Time" : `Last ${dateRange.replace("d", " days")}`;
+    const projectLabel = projectId === "all" ? "All Projects" : projects.find(p => p.id === projectId)?.name ?? projectId;
+
+    lines.push("Workit.OS — Report Export");
+    lines.push(toCSVRow(["Date Range", rangeLabel]));
+    lines.push(toCSVRow(["Project Filter", projectLabel]));
+    lines.push(toCSVRow(["Exported At", new Date().toLocaleString()]));
+    lines.push("");
+
+    lines.push("SUMMARY STATS");
+    lines.push(toCSVRow(["Metric", "Value"]));
+    lines.push(toCSVRow(["Total Tasks", overview?.totalTasks ?? 0]));
+    lines.push(toCSVRow(["Completed Tasks", overview?.completedTasks ?? 0]));
+    lines.push(toCSVRow(["Overdue Tasks", overview?.overdueTasks ?? 0]));
+    lines.push(toCSVRow(["Completion Rate (%)", completionRate]));
+    lines.push(toCSVRow(["Team Efficiency (%)", efficiencyRate]));
+    lines.push(toCSVRow(["Active Projects", overview?.activeProjects ?? 0]));
+    lines.push(toCSVRow(["Total Projects", overview?.totalProjects ?? 0]));
+    lines.push(toCSVRow(["Total Clients", overview?.totalClients ?? 0]));
+    lines.push(toCSVRow(["Team Size", overview?.teamSize ?? 0]));
+    lines.push(toCSVRow(["Hours Logged", overview?.totalHoursLogged ?? 0]));
+    lines.push(toCSVRow(["Present Today", overview?.presentToday ?? 0]));
+    lines.push("");
+
+    lines.push("TASKS BY STATUS");
+    lines.push(toCSVRow(["Status", "Count"]));
+    statusBarData.forEach(d => lines.push(toCSVRow([d.name, d.count])));
+    lines.push("");
+
+    lines.push("TASKS OVER TIME");
+    lines.push(toCSVRow(["Date", "Created", "Completed"]));
+    timelineData.forEach(d => lines.push(toCSVRow([d.date, d.created, d.completed])));
+    lines.push("");
+
+    lines.push("TASKS BY PROJECT");
+    lines.push(toCSVRow(["Project", "Total Tasks", "Completed Tasks", "Completion Rate (%)"]));
+    tasksByProject.forEach(d =>
+      lines.push(toCSVRow([d.name, d.total, d.completed, d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0]))
+    );
+    lines.push("");
+
+    lines.push("TIME LOGGED PER TEAM MEMBER");
+    lines.push(toCSVRow(["Member", "Hours Logged"]));
+    timeByMember.forEach(d => lines.push(toCSVRow([d.name, d.hours])));
+
+    const dateSuffix = new Date().toISOString().slice(0, 10);
+    downloadCSV(`workit-report-${dateSuffix}.csv`, lines.join("\n"));
+  };
+
+  const handleExportPDF = () => {
+    document.body.classList.add("printing-reports");
+    window.print();
+    document.body.classList.remove("printing-reports");
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -258,6 +342,24 @@ export default function Reports() {
               ))}
             </SelectContent>
           </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportCSV} className="gap-2 cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPDF} className="gap-2 cursor-pointer">
+                <FileText className="h-4 w-4 text-red-500" />
+                Print / Save as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
