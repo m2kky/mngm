@@ -8,7 +8,7 @@ import { z } from "zod";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-export const roleEnum = pgEnum("role", ["OWNER", "ADMIN", "PROJECT_MANAGER", "TEAM_MEMBER", "CLIENT"]);
+export const roleEnum = pgEnum("role", ["OWNER", "ADMIN", "TEAM_LEADER", "SUPERVISOR", "EMPLOYEE", "HR", "PROJECT_MANAGER", "TEAM_MEMBER", "CLIENT"]);
 export const userStatusEnum = pgEnum("user_status", ["ACTIVE", "INVITED", "DEACTIVATED"]);
 export const agencyPlanEnum = pgEnum("agency_plan", ["FREE", "PRO", "ENTERPRISE"]);
 export const clientStatusEnum = pgEnum("client_status", ["ACTIVE", "PAUSED", "AT_RISK", "CHURNED", "INACTIVE", "ARCHIVED"]);

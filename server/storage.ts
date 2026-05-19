@@ -84,6 +84,8 @@ export interface IStorage {
   // Invitation methods
   getInvitations(agencyId: string): Promise<Invitation[]>;
   createInvitation(invitation: InsertInvitation): Promise<Invitation>;
+  getInvitationByToken(token: string): Promise<Invitation | undefined>;
+  updateInvitation(id: string, updates: Partial<Invitation>): Promise<Invitation | undefined>;
 
   // Dashboard methods
   getDashboardStats(filters: { agencyId: string; userId?: string }): Promise<any>;
@@ -316,6 +318,16 @@ export class DrizzleStorage implements IStorage {
   async createInvitation(insertInv: InsertInvitation): Promise<Invitation> {
     const result = await db.insert(invitations).values({ ...insertInv, id: randomUUID() }).returning();
     return result[0];
+  }
+
+  async getInvitationByToken(token: string): Promise<Invitation | undefined> {
+    const [row] = await db.select().from(invitations).where(eq(invitations.token, token));
+    return row;
+  }
+
+  async updateInvitation(id: string, updates: Partial<Invitation>): Promise<Invitation | undefined> {
+    const [row] = await db.update(invitations).set({ ...updates, updatedAt: new Date() }).where(eq(invitations.id, id)).returning();
+    return row;
   }
 
   // Dashboard methods

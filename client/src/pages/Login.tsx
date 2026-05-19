@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Redirect } from "wouter";
+import { useState, useEffect } from "react";
+import { Redirect, useSearch } from "wouter";
 import { Loader2, Mail, Lock, Eye, EyeOff, User } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -11,13 +11,40 @@ import { useToast } from "@/hooks/use-toast";
 export default function Login() {
   const { currentUser, signIn, signUp } = useAuth();
   const { toast } = useToast();
+  const search = useSearch();
 
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const params = new URLSearchParams(search);
+  const inviteToken = params.get("invite") ?? null;
+
+  const [mode, setMode] = useState<"signin" | "register">(inviteToken ? "register" : "signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [inviteInfo, setInviteInfo] = useState<{ email: string; role: string } | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!inviteToken) return;
+    fetch(`/api/invitations/by-token/${inviteToken}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Invalid or expired invite link");
+        return res.json();
+      })
+      .then((data) => {
+        setInviteInfo(data);
+        setEmail(data.email);
+        if (data.status !== "PENDING") {
+          setInviteError("This invite has already been used or revoked.");
+        } else if (new Date(data.expiresAt) < new Date()) {
+          setInviteError("This invite link has expired.");
+        }
+      })
+      .catch((err) => {
+        setInviteError(err.message ?? "Invalid invite link");
+      });
+  }, [inviteToken]);
 
   if (currentUser) {
     return <Redirect to="/dashboard" />;
@@ -31,8 +58,8 @@ export default function Login() {
         await signIn(email, password);
         toast({ title: "Welcome back!" });
       } else {
-        await signUp(name, email, password);
-        toast({ title: "Account created!", description: "Let's set up your workspace." });
+        await signUp(name, email, password, inviteToken ?? undefined);
+        toast({ title: "Account created!", description: inviteToken ? "You've joined the workspace." : "Let's set up your workspace." });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Something went wrong";
@@ -53,9 +80,25 @@ export default function Login() {
             Welcome to Workit.OS
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            {mode === "signin" ? "Sign in to your workspace" : "Create your account"}
+            {inviteToken
+              ? "You've been invited to join a workspace"
+              : mode === "signin"
+              ? "Sign in to your workspace"
+              : "Create your account"}
           </p>
         </div>
+
+        {inviteToken && inviteError && (
+          <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm text-center">
+            {inviteError}
+          </div>
+        )}
+
+        {inviteToken && inviteInfo && !inviteError && (
+          <div className="p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 text-sm text-center">
+            Invited as <strong>{inviteInfo.role.replace("_", " ")}</strong> — create your account below.
+          </div>
+        )}
 
         <GlassCard className="p-6 space-y-5">
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -90,10 +133,13 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 bg-white/10 border-white/20 focus:bg-white/15"
                   required
-                  disabled={isLoading}
+                  disabled={isLoading || (!!inviteToken && !!inviteInfo)}
                   autoComplete="email"
                 />
               </div>
+              {inviteToken && inviteInfo && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">Email is pre-filled from your invitation and cannot be changed.</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -131,38 +177,40 @@ export default function Login() {
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
-              disabled={isLoading}
+              disabled={isLoading || (!!inviteToken && !!inviteError)}
             >
               {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {mode === "signin" ? "Sign In" : "Create Account"}
             </Button>
           </form>
 
-          <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-            {mode === "signin" ? (
-              <>
-                Don't have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => setMode("register")}
-                  className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
-                >
-                  Register
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => setMode("signin")}
-                  className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
-                >
-                  Sign In
-                </button>
-              </>
-            )}
-          </div>
+          {!inviteToken && (
+            <div className="text-center text-sm text-gray-600 dark:text-gray-400">
+              {mode === "signin" ? (
+                <>
+                  Don't have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode("register")}
+                    className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
+                  >
+                    Register
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode("signin")}
+                    className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
+                  >
+                    Sign In
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </GlassCard>
       </div>
     </div>

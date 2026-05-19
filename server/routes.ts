@@ -6,6 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -37,6 +38,10 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 const JWT_EXPIRES_IN = "30d";
+
+// Roles that can be assigned to team members (excludes OWNER which is auto-assigned)
+const ASSIGNABLE_ROLES = ["ADMIN", "TEAM_LEADER", "SUPERVISOR", "EMPLOYEE", "HR", "PROJECT_MANAGER", "TEAM_MEMBER", "CLIENT"] as const;
+const assignableRoleSchema = z.enum(ASSIGNABLE_ROLES);
 
 function toSafeUser(user: User): Omit<User, "passwordHash"> {
   const { passwordHash: _h, ...safe } = user;
@@ -81,7 +86,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { name, password } = req.body;
+      const { name, password, inviteToken } = req.body;
       const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password are required" });
@@ -93,17 +98,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing) {
         return res.status(409).json({ error: "An account with this email already exists" });
       }
+
+      let invitedAgencyId: string | null = null;
+      let invitedRole: string = "TEAM_MEMBER";
+      let invitation: any = null;
+
+      if (inviteToken) {
+        invitation = await storage.getInvitationByToken(inviteToken);
+        if (!invitation) {
+          return res.status(400).json({ error: "Invalid invite link" });
+        }
+        if (invitation.status !== "PENDING") {
+          return res.status(400).json({ error: "This invite has already been used or revoked" });
+        }
+        if (new Date(invitation.expiresAt) < new Date()) {
+          return res.status(400).json({ error: "This invite link has expired" });
+        }
+        if (invitation.email.toLowerCase() !== email) {
+          return res.status(400).json({ error: "This invite was sent to a different email address" });
+        }
+        invitedAgencyId = invitation.agencyId;
+        invitedRole = invitation.role;
+      }
+
       const passwordHash = await bcrypt.hash(password, 12);
+      const parsedRole = assignableRoleSchema.safeParse(invitedRole);
       const user = await storage.createUser({
         name: name || null,
         email,
         passwordHash,
         emailVerified: false,
-        role: "TEAM_MEMBER",
+        role: parsedRole.success ? parsedRole.data : "TEAM_MEMBER",
         status: "ACTIVE",
         language: "en",
         theme: "system",
+        agencyId: invitedAgencyId,
       });
+
+      if (invitation) {
+        await storage.updateInvitation(invitation.id, {
+          status: "ACCEPTED",
+          acceptedAt: new Date(),
+          userId: user.id,
+        });
+      }
+
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       res.status(201).json({ token, user: toSafeUser(user) });
     } catch (e: any) {
@@ -125,6 +164,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) {
         return res.status(401).json({ error: "Invalid email or password" });
+      }
+      if (user.status === "DEACTIVATED") {
+        return res.status(403).json({ error: "Your account has been deactivated. Please contact your workspace admin." });
       }
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       res.json({ token, user: toSafeUser(user) });
@@ -174,8 +216,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/agencies/:agencyId/users", requireAuth, async (req, res) => {
+  app.get("/api/agencies/:agencyId/users", requireAuth, async (req: any, res) => {
     try {
+      const requester = await storage.getUser(req.userId);
+      if (!requester || requester.agencyId !== req.params.agencyId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const users = await storage.getAgencyUsers(req.params.agencyId);
       res.json(users.map((u) => toSafeUser(u)));
     } catch (e: any) {
@@ -629,8 +675,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Invitations ─────────────────────────────────────────────────────────────
 
-  app.get("/api/agencies/:agencyId/invitations", requireAuth, async (req, res) => {
+  app.get("/api/agencies/:agencyId/invitations", requireAuth, async (req: any, res) => {
     try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
       const invitations = await storage.getInvitations(req.params.agencyId);
       res.json(invitations);
     } catch (e: any) {
@@ -638,11 +685,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/invitations", requireAuth, async (req, res) => {
+  // Legacy invitation endpoint — kept for backward compatibility but now requires admin access
+  // and enforces agency scoping to the requester's own agency.
+  app.post("/api/invitations", requireAuth, async (req: any, res) => {
     try {
-      const data = insertInvitationSchema.parse(req.body);
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      if (me.role !== "OWNER" && me.role !== "ADMIN") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      // Force agencyId and invitedById to the requester's context
+      const data = insertInvitationSchema.parse({
+        ...req.body,
+        agencyId: me.agencyId,
+        invitedById: me.id,
+      });
       const invitation = await storage.createInvitation(data);
       res.status(201).json(invitation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── Team Member Management ──────────────────────────────────────────────────
+
+  // Helper: check if requesting user is an admin (OWNER or ADMIN) of an agency
+  async function requireAgencyAdmin(req: any, res: any, agencyId: string): Promise<boolean> {
+    const me = await storage.getUser(req.userId);
+    if (!me || me.agencyId !== agencyId || (me.role !== "OWNER" && me.role !== "ADMIN")) {
+      res.status(403).json({ error: "Admin access required" });
+      return false;
+    }
+    return true;
+  }
+
+  // Create an invitation (admin only, auto-generates token and expiry)
+  app.post("/api/agencies/:agencyId/members/invite", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      const { email, role } = req.body;
+      if (!email) return res.status(400).json({ error: "Email is required" });
+      const inviteEmail = email.trim().toLowerCase();
+      const token = randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      const parsedInviteRole = assignableRoleSchema.safeParse(role ?? "TEAM_MEMBER");
+      if (!parsedInviteRole.success) {
+        return res.status(400).json({ error: `Invalid role. Must be one of: ${ASSIGNABLE_ROLES.join(", ")}` });
+      }
+      const invitation = await storage.createInvitation({
+        email: inviteEmail,
+        role: parsedInviteRole.data,
+        status: "PENDING",
+        token,
+        expiresAt,
+        agencyId: req.params.agencyId,
+        invitedById: req.userId,
+      });
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      res.status(201).json({ ...invitation, inviteLink: `${baseUrl}/login?invite=${token}` });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Get invitation by token (public — used during registration)
+  app.get("/api/invitations/by-token/:token", async (req, res) => {
+    try {
+      const invitation = await storage.getInvitationByToken(req.params.token);
+      if (!invitation) return res.status(404).json({ error: "Invitation not found" });
+      res.json({ email: invitation.email, role: invitation.role, status: invitation.status, expiresAt: invitation.expiresAt });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Update a member's role (admin only)
+  app.patch("/api/agencies/:agencyId/members/:userId/role", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      const { role } = req.body;
+      const parsedRole = assignableRoleSchema.safeParse(role);
+      if (!parsedRole.success) {
+        return res.status(400).json({ error: `Invalid role. Must be one of: ${ASSIGNABLE_ROLES.join(", ")}` });
+      }
+      const target = await storage.getUser(req.params.userId);
+      if (!target || target.agencyId !== req.params.agencyId) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      // Cannot change the OWNER's role
+      if (target.role === "OWNER") {
+        return res.status(403).json({ error: "Cannot change the workspace owner's role" });
+      }
+      const updated = await storage.updateUser(req.params.userId, { role: parsedRole.data });
+      res.json(toSafeUser(updated!));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Deactivate a member (admin only)
+  app.patch("/api/agencies/:agencyId/members/:userId/deactivate", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      const target = await storage.getUser(req.params.userId);
+      if (!target || target.agencyId !== req.params.agencyId) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      if (target.role === "OWNER") {
+        return res.status(403).json({ error: "Cannot deactivate the workspace owner" });
+      }
+      if (req.params.userId === req.userId) {
+        return res.status(403).json({ error: "Cannot deactivate your own account" });
+      }
+      const updated = await storage.updateUser(req.params.userId, { status: "DEACTIVATED" });
+      res.json(toSafeUser(updated!));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Reactivate a member (admin only)
+  app.patch("/api/agencies/:agencyId/members/:userId/reactivate", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      const target = await storage.getUser(req.params.userId);
+      if (!target || target.agencyId !== req.params.agencyId) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      const updated = await storage.updateUser(req.params.userId, { status: "ACTIVE" });
+      res.json(toSafeUser(updated!));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Revoke an invitation (admin only)
+  app.patch("/api/agencies/:agencyId/invitations/:invitationId/revoke", requireAuth, async (req: any, res) => {
+    try {
+      if (!await requireAgencyAdmin(req, res, req.params.agencyId)) return;
+      // Fetch the invitation and verify it belongs to this agency (prevents IDOR)
+      const allInvitations = await storage.getInvitations(req.params.agencyId);
+      const invitation = allInvitations.find((inv) => inv.id === req.params.invitationId);
+      if (!invitation) return res.status(404).json({ error: "Invitation not found" });
+      const updated = await storage.updateInvitation(req.params.invitationId, {
+        status: "REVOKED",
+        revokedAt: new Date(),
+      });
+      res.json(updated);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -904,7 +1093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const end = endDate ? new Date(endDate as string) : null;
       const filtered = entries.filter(e => {
         if (!start && !end) return true;
-        const ref = e.startedAt ? new Date(e.startedAt) : null;
+        const ref = e.startTime ? new Date(e.startTime) : null;
         if (!ref) return true;
         if (start && ref < start) return false;
         if (end && ref > end) return false;

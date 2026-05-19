@@ -516,6 +516,20 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
+  async getInvitationByToken(token: string): Promise<Invitation | undefined> {
+    const [row] = await db.select().from(invitations).where(eq(invitations.token, token));
+    return row;
+  }
+
+  async updateInvitation(id: string, updates: Partial<Invitation>): Promise<Invitation | undefined> {
+    const [row] = await db
+      .update(invitations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(invitations.id, id))
+      .returning();
+    return row;
+  }
+
   // ─── Chat methods ────────────────────────────────────────────────────────────
 
   async getChatChannels(agencyId: string): Promise<ChatChannel[]> {

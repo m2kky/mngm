@@ -31,7 +31,7 @@ interface AuthContextType {
   userProfile: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string, inviteToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUserProfile: () => Promise<void>;
   setUserProfile: (profile: User | null) => void;
@@ -93,10 +93,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(user);
   };
 
-  const signUp = async (name: string, email: string, password: string) => {
+  const signUp = async (name: string, email: string, password: string, inviteToken?: string) => {
     const res = await apiFetch("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, ...(inviteToken ? { inviteToken } : {}) }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Registration failed" }));

@@ -30,6 +30,7 @@ const navigation = [
   { name: "Chat", href: "/chat", icon: MessageCircle },
   { name: "Attendance", href: "/attendance", icon: Clock },
   { name: "Reports", href: "/reports", icon: BarChart3 },
+  { name: "Team", href: "/team", icon: Users },
 ];
 
 export function Sidebar({ isCollapsed }: SidebarProps) {

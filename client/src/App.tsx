@@ -16,6 +16,7 @@ import Attendance from "@/pages/Attendance";
 import Reports from "@/pages/Reports";
 import Files from "@/pages/Files";
 import Pages from "@/pages/Pages";
+import Team from "@/pages/Team";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -82,6 +83,11 @@ function Router() {
       <Route path="/reports">
         <ProtectedRoute>
           <Reports />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/team">
+        <ProtectedRoute>
+          <Team />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />
