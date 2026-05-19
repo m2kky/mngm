@@ -1,6 +1,7 @@
 import {
   pgTable, pgEnum, text, integer, boolean,
   timestamp, numeric, jsonb, index, uniqueIndex, primaryKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -58,7 +59,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   role: roleEnum("role").notNull().default("TEAM_MEMBER"),
-  agencyId: text("agency_id").references(() => agencies.id, { onDelete: "set null" }),
+  agencyId: text("agency_id").references((): AnyPgColumn => agencies.id, { onDelete: "set null" }),
 }, (t) => [
   index("users_agency_id_idx").on(t.agencyId),
   index("users_status_idx").on(t.status),
@@ -77,7 +78,7 @@ export const agencies = pgTable("agencies", {
   workingDays: integer("working_days").array().notNull().default([0, 1, 2, 3, 4]),
   workingHoursStart: text("working_hours_start").notNull().default("09:00"),
   workingHoursEnd: text("working_hours_end").notNull().default("17:00"),
-  ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerId: text("owner_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -136,7 +137,7 @@ export const invitations = pgTable("invitations", {
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
-  invitedById: text("invited_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  invitedById: text("invited_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -332,8 +333,8 @@ export const tasks = pgTable("tasks", {
   position: integer("position").notNull().default(0),
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  stageId: text("stage_id").notNull().references(() => projectStages.id, { onDelete: "cascade" }),
-  createdById: text("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  stageId: text("stage_id").notNull().references(() => projectStages.id, { onDelete: "restrict" }),
+  createdById: text("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   reviewerId: text("reviewer_id").references(() => users.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -435,6 +436,11 @@ export const fileAssets = pgTable("file_assets", {
   index("file_assets_client_id_idx").on(t.clientId),
   index("file_assets_project_id_idx").on(t.projectId),
   index("file_assets_task_id_idx").on(t.taskId),
+  index("file_assets_comment_id_idx").on(t.commentId),
+  index("file_assets_brand_kit_id_idx").on(t.brandKitId),
+  index("file_assets_strategy_id_idx").on(t.strategyId),
+  index("file_assets_uploaded_by_id_idx").on(t.uploadedById),
+  index("file_assets_uploaded_by_client_portal_user_id_idx").on(t.uploadedByClientPortalUserId),
 ]);
 
 export const taskComments = pgTable("task_comments", {
@@ -447,7 +453,7 @@ export const taskComments = pgTable("task_comments", {
   content: text("content").notNull(),
   mentions: text("mentions").array().notNull().default([]),
   isClientFeedback: boolean("is_client_feedback").notNull().default(false),
-  parentCommentId: text("parent_comment_id").references((): any => taskComments.id, { onDelete: "set null" }),
+  parentCommentId: text("parent_comment_id").references((): AnyPgColumn => taskComments.id, { onDelete: "set null" }),
   editedAt: timestamp("edited_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -662,6 +668,7 @@ export const automationRuns = pgTable("automation_runs", {
   index("automation_runs_agency_started_idx").on(t.agencyId, t.startedAt),
   index("automation_runs_rule_id_idx").on(t.ruleId),
   index("automation_runs_status_idx").on(t.status),
+  index("automation_runs_entity_type_entity_id_idx").on(t.entityType, t.entityId),
 ]);
 
 export const projectTemplates = pgTable("project_templates", {
@@ -739,7 +746,7 @@ export const blocks = pgTable("blocks", {
   type: blockTypeEnum("type").notNull(),
   content: jsonb("content"),
   position: integer("position").notNull(),
-  parentId: text("parent_id").references((): any => blocks.id, { onDelete: "cascade" }),
+  parentId: text("parent_id").references((): AnyPgColumn => blocks.id, { onDelete: "cascade" }),
   taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
@@ -757,7 +764,7 @@ export const templateBlocks = pgTable("template_blocks", {
   type: blockTypeEnum("type").notNull(),
   content: jsonb("content"),
   position: integer("position").notNull(),
-  parentId: text("parent_id").references((): any => templateBlocks.id, { onDelete: "cascade" }),
+  parentId: text("parent_id").references((): AnyPgColumn => templateBlocks.id, { onDelete: "cascade" }),
   taskTemplateId: text("task_template_id").references(() => taskTemplates.id, { onDelete: "cascade" }),
   projectTemplateId: text("project_template_id").references(() => projectTemplates.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

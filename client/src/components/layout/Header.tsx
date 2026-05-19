@@ -130,7 +130,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                 <Button variant="ghost" className="p-0 hover:bg-white/10 rounded-full">
                   <div className="flex items-center space-x-2 p-1">
                     <Avatar className="w-8 h-8">
-                      <AvatarImage src={userProfile?.profilePicture || ""} />
+                      <AvatarImage src={userProfile?.image || ""} />
                       <AvatarFallback className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
                         {userProfile?.name?.charAt(0) || "U"}
                       </AvatarFallback>

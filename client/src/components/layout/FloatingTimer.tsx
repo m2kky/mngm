@@ -45,7 +45,7 @@ export function FloatingTimer() {
                 <div 
                   className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all duration-1000"
                   style={{ 
-                    width: `${((activeTimer?.duration || 1500) - timeLeft) / (activeTimer?.duration || 1500) * 100}%` 
+                    width: `${((activeTimer?.durationSeconds || 1500) - timeLeft) / (activeTimer?.durationSeconds || 1500) * 100}%` 
                   }}
                 />
               </div>

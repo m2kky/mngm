@@ -57,7 +57,7 @@ export default function Onboarding() {
   const [language, setLanguage] = useState("en");
 
   // If user already has profile, redirect to dashboard
-  if (userProfile?.workspaceId) {
+  if (userProfile?.agencyId) {
     return <Redirect to="/dashboard" />;
   }
 
