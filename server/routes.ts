@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import {
   insertUserSchema,
@@ -15,6 +18,9 @@ import {
   insertNotificationSchema,
   insertInvitationSchema,
 } from "@shared/schema";
+
+const JWT_SECRET = process.env.JWT_SECRET ?? "workit-os-dev-secret-change-in-production";
+const JWT_EXPIRES_IN = "30d";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -37,11 +43,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.headers.authorization) {
+    const header = req.headers.authorization as string | undefined;
+    if (!header?.startsWith("Bearer ")) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    next();
+    try {
+      const payload = jwt.verify(header.slice(7), JWT_SECRET) as { userId: string };
+      req.userId = payload.userId;
+      next();
+    } catch {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
   };
+
+  // ─── Auth ────────────────────────────────────────────────────────────────────
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { name, email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
+      }
+      const existing = await storage.getUserByEmail(email);
+      if (existing) {
+        return res.status(409).json({ error: "An account with this email already exists" });
+      }
+      const passwordHash = await bcrypt.hash(password, 12);
+      const user = await storage.createUser({
+        name: name || null,
+        email,
+        passwordHash,
+        emailVerified: false,
+        role: "TEAM_MEMBER",
+        status: "ACTIVE",
+        language: "en",
+        theme: "system",
+      });
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const { passwordHash: _h, ...safeUser } = user;
+      res.status(201).json({ token, user: safeUser });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const { passwordHash: _h, ...safeUser } = user;
+      res.json({ token, user: safeUser });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/auth/me", requireAuth, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const { passwordHash: _h, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // ─── Users ──────────────────────────────────────────────────────────────────
 

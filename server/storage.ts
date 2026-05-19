@@ -107,6 +107,7 @@ export class MemStorage implements IStorage {
       lastLoginAt: null,
       agencyId: null,
       ...insertUser,
+      passwordHash: insertUser.passwordHash ?? null,
       emailVerified: insertUser.emailVerified ?? false,
       status: insertUser.status ?? "ACTIVE",
       language: insertUser.language ?? "en",

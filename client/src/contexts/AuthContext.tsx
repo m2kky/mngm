@@ -1,23 +1,37 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import {
-  User as FirebaseUser,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  GoogleAuthProvider,
-  signInWithPopup
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { User } from "@shared/schema";
 
+const TOKEN_KEY = "wk_token";
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function setAuthToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearAuthToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+async function apiFetch(path: string, options?: RequestInit) {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(path, { ...options, headers });
+  return res;
+}
+
 interface AuthContextType {
-  currentUser: FirebaseUser | null;
+  currentUser: User | null;
   userProfile: User | null;
   loading: boolean;
-  firebaseReady: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUserProfile: () => Promise<void>;
   setUserProfile: (profile: User | null) => void;
@@ -34,104 +48,84 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<User | null>(null);
-  const [loading, setLoading] = useState(firebaseConfigured);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const signIn = async (email: string, password: string) => {
-    if (!auth) throw new Error("Firebase is not configured.");
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  const signInWithGoogle = async () => {
-    if (!auth) throw new Error("Firebase is not configured.");
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  };
-
-  const logout = async () => {
-    if (!auth) throw new Error("Firebase is not configured.");
-    await signOut(auth);
-    setUserProfile(null);
-  };
-
-  const refreshUserProfile = async () => {
-    if (!currentUser || !db) return;
+  const loadProfile = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setCurrentUser(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setUserProfile({
-          id: currentUser.uid,
-          name: data.name ?? null,
-          email: currentUser.email ?? data.email ?? "",
-          emailVerified: currentUser.emailVerified,
-          image: data.image ?? data.profilePicture ?? null,
-          status: data.status ?? "ACTIVE",
-          language: data.language ?? "en",
-          theme: data.theme ?? "system",
-          lastLoginAt: data.lastLoginAt?.toDate() ?? null,
-          role: data.role ?? "TEAM_MEMBER",
-          agencyId: data.agencyId ?? data.workspaceId ?? null,
-          createdAt: data.createdAt?.toDate() ?? new Date(),
-          updatedAt: data.updatedAt?.toDate() ?? new Date(),
-        } as User);
+      const res = await apiFetch("/api/auth/me");
+      if (res.ok) {
+        const user: User = await res.json();
+        setCurrentUser(user);
+      } else {
+        clearAuthToken();
+        setCurrentUser(null);
       }
-    } catch (error) {
-      console.error("Error refreshing user profile:", error);
+    } catch {
+      clearAuthToken();
+      setCurrentUser(null);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!auth || !db) {
-      setLoading(false);
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setCurrentUser(firebaseUser);
-
-      if (firebaseUser && db) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            setUserProfile({
-              id: firebaseUser.uid,
-              name: data.name ?? null,
-              email: firebaseUser.email ?? data.email ?? "",
-              emailVerified: firebaseUser.emailVerified,
-              image: data.image ?? data.profilePicture ?? null,
-              status: data.status ?? "ACTIVE",
-              language: data.language ?? "en",
-              theme: data.theme ?? "system",
-              lastLoginAt: data.lastLoginAt?.toDate() ?? null,
-              role: data.role ?? "TEAM_MEMBER",
-              agencyId: data.agencyId ?? data.workspaceId ?? null,
-              createdAt: data.createdAt?.toDate() ?? new Date(),
-              updatedAt: data.updatedAt?.toDate() ?? new Date(),
-            } as User);
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-        }
-      } else {
-        setUserProfile(null);
-      }
-
-      setLoading(false);
-    });
-
-    return unsubscribe;
+    loadProfile();
   }, []);
 
-  const value = {
+  const signIn = async (email: string, password: string) => {
+    const res = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Login failed" }));
+      throw new Error(err.error || "Login failed");
+    }
+    const { token, user } = await res.json();
+    setAuthToken(token);
+    setCurrentUser(user);
+  };
+
+  const signUp = async (name: string, email: string, password: string) => {
+    const res = await apiFetch("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Registration failed" }));
+      throw new Error(err.error || "Registration failed");
+    }
+    const { token, user } = await res.json();
+    setAuthToken(token);
+    setCurrentUser(user);
+  };
+
+  const logout = async () => {
+    clearAuthToken();
+    setCurrentUser(null);
+  };
+
+  const refreshUserProfile = async () => {
+    await loadProfile();
+  };
+
+  const setUserProfile = (profile: User | null) => {
+    setCurrentUser(profile);
+  };
+
+  const value: AuthContextType = {
     currentUser,
-    userProfile,
+    userProfile: currentUser,
     loading,
-    firebaseReady: firebaseConfigured,
     signIn,
-    signInWithGoogle,
+    signUp,
     logout,
     refreshUserProfile,
     setUserProfile,

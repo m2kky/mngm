@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { ChevronRight, ChevronLeft, Check, Users, Building, Loader2 } from "lucide-react";
-import { doc, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, getAuthToken } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,7 +67,7 @@ const currencies = [
 ];
 
 export default function Onboarding() {
-  const { userProfile, currentUser, refreshUserProfile, setUserProfile } = useAuth();
+  const { currentUser, userProfile, refreshUserProfile, setUserProfile } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -110,7 +108,7 @@ export default function Onboarding() {
 
     setIsSubmitting(true);
     try {
-      const token = await currentUser.getIdToken();
+      const token = getAuthToken();
       const authHeaders = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
@@ -122,7 +120,7 @@ export default function Onboarding() {
         const agencyRes = await fetch("/api/agencies", {
           method: "POST",
           headers: authHeaders,
-          body: JSON.stringify({ name: agencyName, timezone, currency, ownerId: currentUser.uid }),
+          body: JSON.stringify({ name: agencyName, timezone, currency, ownerId: currentUser.id }),
         });
         if (!agencyRes.ok) throw new Error(`Failed to create agency: ${await agencyRes.text()}`);
         const agency = await agencyRes.json();
@@ -139,7 +137,7 @@ export default function Onboarding() {
 
       const dbRole: Role = roleToDbEnum[selectedRole] ?? "TEAM_MEMBER";
 
-      const userRes = await fetch(`/api/users/${currentUser.uid}`, {
+      const userRes = await fetch(`/api/users/${currentUser.id}`, {
         method: "PUT",
         headers: authHeaders,
         body: JSON.stringify({
@@ -151,33 +149,16 @@ export default function Onboarding() {
       });
       if (!userRes.ok) throw new Error(`Failed to update user: ${await userRes.text()}`);
 
-      if (db) {
-        await setDoc(doc(db, "users", currentUser.uid), {
-          agencyId,
-          name: name || null,
-          language,
-          role: dbRole,
-          email: currentUser.email ?? "",
-        }, { merge: true });
-      }
-
       const resolvedName = name.trim() || userProfile?.name || null;
-      const minimalProfile: User = {
-        id: currentUser.uid,
+      const updatedProfile: User = {
+        ...currentUser,
         name: resolvedName,
-        email: currentUser.email ?? userProfile?.email ?? "",
-        emailVerified: currentUser.emailVerified,
-        image: userProfile?.image ?? null,
-        status: userProfile?.status ?? "ACTIVE",
         language,
-        theme: userProfile?.theme ?? "system",
-        lastLoginAt: userProfile?.lastLoginAt ?? null,
         role: dbRole,
         agencyId,
-        createdAt: userProfile?.createdAt ?? new Date(),
         updatedAt: new Date(),
       };
-      setUserProfile(minimalProfile);
+      setUserProfile(updatedProfile);
 
       await refreshUserProfile();
 
@@ -319,9 +300,6 @@ export default function Onboarding() {
                       onChange={(e) => setWorkspaceCode(e.target.value)}
                       className="bg-white/10 border-white/20"
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Ask your agency admin for an invitation code.
-                    </p>
                   </div>
                 )}
               </div>

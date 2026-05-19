@@ -52,6 +52,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
+  passwordHash: text("password_hash"),
   status: userStatusEnum("status").notNull().default("ACTIVE"),
   language: text("language").notNull().default("en"),
   theme: text("theme").notNull().default("system"),
