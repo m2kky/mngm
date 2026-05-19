@@ -855,6 +855,31 @@ export const taskTemplateProperties = pgTable("task_template_properties", {
   index("task_template_properties_property_id_idx").on(t.propertyId),
 ]);
 
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+export const chatChannels = pgTable("chat_channels", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull().default("channel"), // "channel" | "direct"
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("chat_channels_agency_id_idx").on(t.agencyId),
+]);
+
+export const chatMessages = pgTable("chat_messages", {
+  id: text("id").primaryKey(),
+  content: text("content").notNull(),
+  channelId: text("channel_id").notNull().references(() => chatChannels.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("chat_messages_channel_id_idx").on(t.channelId),
+  index("chat_messages_created_at_idx").on(t.createdAt),
+]);
+
 // ─── Insert Schemas (drizzle-zod) ─────────────────────────────────────────────
 // id is always omitted — storage layers generate IDs server-side.
 
@@ -902,6 +927,8 @@ export const insertPropertyRelationSchema = createInsertSchema(propertyRelations
 export const insertProjectViewSchema = createInsertSchema(projectViews).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProjectTemplateStageSchema = createInsertSchema(projectTemplateStages).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskTemplatePropertySchema = createInsertSchema(taskTemplateProperties).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertChatChannelSchema = createInsertSchema(chatChannels).omit({ id: true, createdAt: true });
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
 
 // ─── TypeScript Select Types ──────────────────────────────────────────────────
 
@@ -996,6 +1023,10 @@ export type InsertPropertyRelation = z.infer<typeof insertPropertyRelationSchema
 export type InsertProjectView = z.infer<typeof insertProjectViewSchema>;
 export type InsertProjectStageTemplate = z.infer<typeof insertProjectTemplateStageSchema>;
 export type InsertTaskTemplateProperty = z.infer<typeof insertTaskTemplatePropertySchema>;
+export type ChatChannel = typeof chatChannels.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatChannel = z.infer<typeof insertChatChannelSchema>;
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 
 // ─── Enum value types ─────────────────────────────────────────────────────────
 

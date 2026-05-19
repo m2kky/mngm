@@ -4,6 +4,7 @@ import { db } from "./db";
 import {
   users, agencies, clients, projects, projectStages, tasks,
   timeEntries, taskComments, fileAssets, notifications, invitations,
+  chatChannels, chatMessages,
 } from "@shared/schema";
 import {
   User, InsertUser,
@@ -19,6 +20,8 @@ import {
   FileAsset, InsertFileAsset,
   Invitation, InsertInvitation,
   ProjectStage, InsertProjectStage,
+  ChatChannel, InsertChatChannel,
+  ChatMessage, InsertChatMessage,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -82,7 +85,15 @@ export interface IStorage {
 
   // Dashboard methods
   getDashboardStats(filters: { agencyId: string; userId?: string }): Promise<any>;
+
+  // Chat methods
+  getChatChannels(agencyId: string): Promise<ChatChannel[]>;
+  getChatChannel(id: string): Promise<ChatChannel | undefined>;
+  createChatChannel(channel: InsertChatChannel): Promise<ChatChannel>;
+  getChatMessages(channelId: string, limit?: number): Promise<ChatMessage[]>;
+  createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
 }
+
 
 export class DrizzleStorage implements IStorage {
   // User methods
@@ -308,6 +319,42 @@ export class DrizzleStorage implements IStorage {
       totalClients: agencyClients.length,
       activeClients: agencyClients.filter(c => c.status === "ACTIVE").length,
     };
+  }
+
+  // Chat methods
+  async getChatChannels(agencyId: string): Promise<ChatChannel[]> {
+    return db.select().from(chatChannels).where(eq(chatChannels.agencyId, agencyId));
+  }
+
+  async getChatChannel(id: string): Promise<ChatChannel | undefined> {
+    const [row] = await db.select().from(chatChannels).where(eq(chatChannels.id, id));
+    return row;
+  }
+
+  async createChatChannel(channel: InsertChatChannel): Promise<ChatChannel> {
+    const [row] = await db
+      .insert(chatChannels)
+      .values({ ...channel, id: randomUUID(), createdAt: new Date() })
+      .returning();
+    return row;
+  }
+
+  async getChatMessages(channelId: string, limit = 100): Promise<ChatMessage[]> {
+    const rows = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.channelId, channelId))
+      .orderBy(asc(chatMessages.createdAt))
+      .limit(limit);
+    return rows;
+  }
+
+  async createChatMessage(message: InsertChatMessage): Promise<ChatMessage> {
+    const [row] = await db
+      .insert(chatMessages)
+      .values({ ...message, id: randomUUID(), createdAt: new Date() })
+      .returning();
+    return row;
   }
 }
 

@@ -22,6 +22,8 @@ import {
   insertFileAssetSchema,
   insertNotificationSchema,
   insertInvitationSchema,
+  insertChatChannelSchema,
+  insertChatMessageSchema,
 } from "@shared/schema";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -637,6 +639,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertInvitationSchema.parse(req.body);
       const invitation = await storage.createInvitation(data);
       res.status(201).json(invitation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── Chat ────────────────────────────────────────────────────────────────────
+
+  app.get("/api/chat/channels", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      let channels = await storage.getChatChannels(me.agencyId);
+      // Auto-create a General channel if none exist
+      if (channels.length === 0) {
+        const general = await storage.createChatChannel({
+          name: "general",
+          description: "Company-wide announcements and discussion",
+          type: "channel",
+          agencyId: me.agencyId,
+          createdById: me.id,
+        });
+        channels = [general];
+      }
+      res.json(channels);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/chat/channels", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const data = insertChatChannelSchema.parse({ ...req.body, agencyId: me.agencyId, createdById: me.id });
+      const channel = await storage.createChatChannel(data);
+      res.status(201).json(channel);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/chat/channels/:channelId/messages", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const channel = await storage.getChatChannel(req.params.channelId);
+      if (!channel || channel.agencyId !== me.agencyId) return res.status(404).json({ error: "Channel not found" });
+      const messages = await storage.getChatMessages(req.params.channelId, 200);
+      // Attach sender info
+      const userIds = Array.from(new Set(messages.map((m: any) => m.userId)));
+      const senderMap: Record<string, User> = {};
+      await Promise.all(userIds.map(async (uid: any) => {
+        const u = await storage.getUser(uid);
+        if (u) senderMap[uid] = u;
+      }));
+      const enriched = messages.map((m: any) => ({
+        ...m,
+        sender: senderMap[m.userId] ? {
+          id: senderMap[m.userId].id,
+          name: senderMap[m.userId].name,
+          avatarUrl: (senderMap[m.userId] as any).image ?? null,
+        } : null,
+      }));
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/chat/channels/:channelId/messages", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const channel = await storage.getChatChannel(req.params.channelId);
+      if (!channel || channel.agencyId !== me.agencyId) return res.status(404).json({ error: "Channel not found" });
+      const data = insertChatMessageSchema.parse({ content: req.body.content, channelId: req.params.channelId, userId: me.id });
+      const message = await storage.createChatMessage(data);
+      const enriched = {
+        ...message,
+        sender: { id: me.id, name: me.name, avatarUrl: (me as any).image ?? null },
+      };
+      // Broadcast via WebSocket
+      wss.clients.forEach((client) => {
+        if (client.readyState === 1) {
+          client.send(JSON.stringify({ type: "chat_message", channelId: channel.id, message: enriched }));
+        }
+      });
+      res.status(201).json(enriched);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
