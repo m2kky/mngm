@@ -46,13 +46,30 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
 
   const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
 
+  interface Member {
+    id: string;
+    name: string | null;
+    email: string;
+    role: string | null;
+    image: string | null;
+  }
+
   const agencyId = userProfile?.agencyId;
-  const { data: teamMembers = [], isLoading: teamLoading } = useQuery<any[]>({
+  const {
+    data: teamMembers = [],
+    isLoading: teamLoading,
+    isError: teamError,
+  } = useQuery<Member[]>({
     queryKey: ["/api/agencies", agencyId, "users"],
-    queryFn: () =>
-      fetch(`/api/agencies/${agencyId}/users`, {
+    queryFn: async () => {
+      const res = await fetch(`/api/agencies/${agencyId}/users`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("wk_token")}` },
-      }).then(r => r.json()),
+      });
+      if (!res.ok) throw new Error(`Failed to load team: ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error("Unexpected response shape");
+      return data as Member[];
+    },
     enabled: !!agencyId,
   });
 
@@ -187,10 +204,13 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
                     ))}
                   </>
                 )}
-                {!teamLoading && teamMembers.length === 0 && (
+                {!teamLoading && teamError && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Unable to load team members</p>
+                )}
+                {!teamLoading && !teamError && teamMembers.length === 0 && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">No team members yet</p>
                 )}
-                {!teamLoading && teamMembers.slice(0, 8).map((member) => {
+                {!teamLoading && !teamError && teamMembers.slice(0, 8).map((member) => {
                   const initials = (member.name ?? member.email ?? "?")
                     .split(" ")
                     .map((n: string) => n[0])
@@ -227,7 +247,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
                     </div>
                   );
                 })}
-                {!teamLoading && teamMembers.length > 8 && (
+                {!teamLoading && !teamError && teamMembers.length > 8 && (
                   <Link href="/team">
                     <p className="text-xs text-indigo-500 hover:text-indigo-600 px-2 py-1 cursor-pointer">
                       +{teamMembers.length - 8} more members
