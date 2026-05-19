@@ -1530,7 +1530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = await storage.getPage(req.params.id);
       if (!existing) return res.status(404).json({ error: "Page not found" });
       if (existing.agencyId !== me.agencyId) return res.status(403).json({ error: "Forbidden" });
-      const data = insertPageSchema.pick({ title: true, content: true }).partial().parse(req.body);
+      const data = insertPageSchema.pick({ title: true, content: true, parentId: true, isFolder: true }).partial().parse(req.body);
       const page = await storage.updatePage(req.params.id, data);
       res.json(page);
     } catch (e: any) {

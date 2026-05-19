@@ -884,6 +884,8 @@ export const pages = pgTable("pages", {
   id: text("id").primaryKey(),
   title: text("title").notNull().default("Untitled"),
   content: jsonb("content").notNull().default([]),
+  isFolder: boolean("is_folder").notNull().default(false),
+  parentId: text("parent_id").references((): AnyPgColumn => pages.id, { onDelete: "set null" }),
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -891,6 +893,7 @@ export const pages = pgTable("pages", {
 }, (t) => [
   index("pages_agency_id_idx").on(t.agencyId),
   index("pages_created_by_id_idx").on(t.createdById),
+  index("pages_parent_id_idx").on(t.parentId),
 ]);
 
 export const chatChannels = pgTable("chat_channels", {
