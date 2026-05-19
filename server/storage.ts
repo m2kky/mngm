@@ -543,4 +543,9 @@ import { DatabaseStorage } from "./db-storage";
 
 export const storage: IStorage = process.env.DATABASE_URL
   ? new DatabaseStorage()
-  : new MemStorage();
+  : (() => {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("DATABASE_URL must be set in production");
+      }
+      return new MemStorage();
+    })();

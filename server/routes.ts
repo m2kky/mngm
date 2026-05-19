@@ -70,7 +70,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { name, email, password } = req.body;
+      const { name, password } = req.body;
+      const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password are required" });
       }
@@ -101,7 +102,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { password } = req.body;
+      const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password are required" });
       }
