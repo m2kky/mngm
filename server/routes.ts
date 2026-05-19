@@ -1054,12 +1054,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const now = new Date();
       const today = now.toISOString().slice(0, 10);
 
-      // Build task WHERE clauses
-      const taskWhere: ReturnType<typeof eq>[] = [eq(tasksTable.agencyId, me.agencyId) as any];
-      if (projectId) taskWhere.push(eq(tasksTable.projectId, projectId as string) as any);
-      if (start) taskWhere.push(gte(tasksTable.createdAt, start) as any);
-      if (end) taskWhere.push(lte(tasksTable.createdAt, end) as any);
-
       // All aggregation done in the DB — no row fetching into Node
       const [taskAgg, projectCounts, clientCount, teamCount, hoursRow, attendanceRow] = await Promise.all([
         // Single query: conditional COUNT for every status bucket
@@ -1069,7 +1063,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           overdue:    sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.dueDate} IS NOT NULL AND ${tasksTable.dueDate} < NOW() THEN 1 END)`,
           inReview:   sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.reviewStatus} = 'PENDING' AND (${tasksTable.dueDate} IS NULL OR ${tasksTable.dueDate} >= NOW()) THEN 1 END)`,
           inProgress: sql<number>`COUNT(CASE WHEN ${tasksTable.completedAt} IS NULL AND ${tasksTable.reviewStatus} != 'PENDING' AND (${tasksTable.dueDate} IS NULL OR ${tasksTable.dueDate} >= NOW()) THEN 1 END)`,
-        }).from(tasksTable).where(and(...taskWhere)),
+        }).from(tasksTable).where(and(
+          eq(tasksTable.agencyId, me.agencyId),
+          projectId ? eq(tasksTable.projectId, projectId as string) : undefined,
+          start ? gte(tasksTable.createdAt, start) : undefined,
+          end   ? lte(tasksTable.createdAt, end)   : undefined,
+        )),
 
         // Project counts via GROUP BY status
         db.select({ status: projects.status, cnt: count() })
@@ -1202,10 +1201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const end = endDate ? new Date(endDate as string) : null;
 
       // DB-level GROUP BY: join projects → tasks, count total & completed in SQL
-      const taskJoinConditions = [eq(tasksTable.projectId, projects.id)];
-      if (start) taskJoinConditions.push(gte(tasksTable.createdAt, start));
-      if (end) taskJoinConditions.push(lte(tasksTable.createdAt, end));
-
+      // agencyId is included in the join condition to preserve strict tenant scoping
       const rows = await db
         .select({
           projectId: projects.id,
@@ -1214,7 +1210,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           completed: sql<number>`COUNT(${tasksTable.completedAt})`,
         })
         .from(projects)
-        .leftJoin(tasksTable, and(...taskJoinConditions))
+        .leftJoin(tasksTable, and(
+          eq(tasksTable.projectId, projects.id),
+          eq(tasksTable.agencyId, me.agencyId),
+          start ? gte(tasksTable.createdAt, start) : undefined,
+          end   ? lte(tasksTable.createdAt, end)   : undefined,
+        ))
         .where(eq(projects.agencyId, me.agencyId))
         .groupBy(projects.id, projects.name)
         .orderBy(desc(count(tasksTable.id)))
