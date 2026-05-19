@@ -7,7 +7,7 @@ import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { RecentTasks } from "@/components/dashboard/RecentTasks";
 import { TeamActivity } from "@/components/dashboard/TeamActivity";
 import { PerformanceChart } from "@/components/dashboard/PerformanceChart";
-import { PageEditor } from "@/components/editor/PageEditor";
+
 import { ClientPortal } from "@/components/client-portal/ClientPortal";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/button";
@@ -76,9 +76,6 @@ export default function Dashboard() {
             <TeamActivity />
             <PerformanceChart />
           </div>
-
-          {/* Notion-Style Page Editor */}
-          <PageEditor />
 
           {/* Client Portal Preview */}
           <ClientPortal />

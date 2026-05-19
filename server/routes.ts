@@ -27,6 +27,7 @@ import {
   insertInvitationSchema,
   insertChatChannelSchema,
   insertChatMessageSchema,
+  insertPageSchema,
 } from "@shared/schema";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -1012,6 +1013,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(enriched);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ─── Pages ───────────────────────────────────────────────────────────────────
+
+  app.get("/api/pages", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const pageList = await storage.getPages(me.agencyId);
+      res.json(pageList);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/pages/:id", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const page = await storage.getPage(req.params.id);
+      if (!page) return res.status(404).json({ error: "Page not found" });
+      if (page.agencyId !== me.agencyId) return res.status(403).json({ error: "Forbidden" });
+      res.json(page);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/pages", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const data = insertPageSchema.parse({ ...req.body, agencyId: me.agencyId, createdById: me.id });
+      const page = await storage.createPage(data);
+      res.status(201).json(page);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/pages/:id", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const existing = await storage.getPage(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Page not found" });
+      if (existing.agencyId !== me.agencyId) return res.status(403).json({ error: "Forbidden" });
+      const data = insertPageSchema.pick({ title: true, content: true }).partial().parse(req.body);
+      const page = await storage.updatePage(req.params.id, data);
+      res.json(page);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/pages/:id", requireAuth, async (req: any, res) => {
+    try {
+      const me = await storage.getUser(req.userId);
+      if (!me?.agencyId) return res.status(403).json({ error: "No agency" });
+      const existing = await storage.getPage(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Page not found" });
+      if (existing.agencyId !== me.agencyId) return res.status(403).json({ error: "Forbidden" });
+      await storage.deletePage(req.params.id);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

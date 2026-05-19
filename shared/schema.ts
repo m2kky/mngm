@@ -877,6 +877,19 @@ export const attendanceRecords = pgTable("attendance_records", {
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
+export const pages = pgTable("pages", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull().default("Untitled"),
+  content: jsonb("content").notNull().default([]),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("pages_agency_id_idx").on(t.agencyId),
+  index("pages_created_by_id_idx").on(t.createdById),
+]);
+
 export const chatChannels = pgTable("chat_channels", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -950,6 +963,7 @@ export const insertTaskTemplatePropertySchema = createInsertSchema(taskTemplateP
 export const insertChatChannelSchema = createInsertSchema(chatChannels).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
 export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPageSchema = createInsertSchema(pages).omit({ id: true, createdAt: true, updatedAt: true });
 
 // ─── TypeScript Select Types ──────────────────────────────────────────────────
 
@@ -1050,6 +1064,8 @@ export type InsertChatChannel = z.infer<typeof insertChatChannelSchema>;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
 export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
+export type Page = typeof pages.$inferSelect;
+export type InsertPage = z.infer<typeof insertPageSchema>;
 
 // ─── Enum value types ─────────────────────────────────────────────────────────
 

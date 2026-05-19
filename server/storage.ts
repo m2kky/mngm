@@ -4,7 +4,7 @@ import { db } from "./db";
 import {
   users, agencies, clients, projects, projectStages, tasks,
   timeEntries, taskComments, fileAssets, notifications, invitations,
-  chatChannels, chatMessages, attendanceRecords,
+  chatChannels, chatMessages, attendanceRecords, pages,
 } from "@shared/schema";
 import {
   User, InsertUser,
@@ -23,6 +23,7 @@ import {
   ChatChannel, InsertChatChannel,
   ChatMessage, InsertChatMessage,
   AttendanceRecord, InsertAttendanceRecord,
+  Page, InsertPage,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -98,6 +99,13 @@ export interface IStorage {
   createChatChannel(channel: InsertChatChannel): Promise<ChatChannel>;
   getChatMessages(channelId: string, limit?: number): Promise<ChatMessage[]>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+
+  // Pages methods
+  getPages(agencyId: string): Promise<Page[]>;
+  getPage(id: string): Promise<Page | undefined>;
+  createPage(page: InsertPage): Promise<Page>;
+  updatePage(id: string, updates: Partial<InsertPage>): Promise<Page | undefined>;
+  deletePage(id: string): Promise<boolean>;
 }
 
 
@@ -393,6 +401,38 @@ export class DrizzleStorage implements IStorage {
       .values({ ...message, id: randomUUID(), createdAt: new Date() })
       .returning();
     return row;
+  }
+
+  // Pages methods
+  async getPages(agencyId: string): Promise<Page[]> {
+    return db.select().from(pages).where(eq(pages.agencyId, agencyId)).orderBy(desc(pages.updatedAt));
+  }
+
+  async getPage(id: string): Promise<Page | undefined> {
+    const [row] = await db.select().from(pages).where(eq(pages.id, id));
+    return row;
+  }
+
+  async createPage(page: InsertPage): Promise<Page> {
+    const [row] = await db
+      .insert(pages)
+      .values({ ...page, id: randomUUID(), createdAt: new Date(), updatedAt: new Date() })
+      .returning();
+    return row;
+  }
+
+  async updatePage(id: string, updates: Partial<InsertPage>): Promise<Page | undefined> {
+    const [row] = await db
+      .update(pages)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(pages.id, id))
+      .returning();
+    return row;
+  }
+
+  async deletePage(id: string): Promise<boolean> {
+    const result = await db.delete(pages).where(eq(pages.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 
