@@ -18,12 +18,12 @@ import { z } from "zod";
 import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
-  Loader2, Kanban, Filter, X, AlertCircle,
+  Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import type { Task, ProjectStage, Project } from "@shared/schema";
+import type { Task, ProjectStage, Project, User } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -45,7 +45,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,81 +59,427 @@ const PRIORITY_CONFIG = {
 } as const;
 
 const TYPE_CONFIG = {
-  DESIGN:      { label: "Design",      color: "bg-purple-100 text-purple-700" },
-  COPY:        { label: "Copy",        color: "bg-yellow-100 text-yellow-700" },
-  DEVELOPMENT: { label: "Dev",         color: "bg-cyan-100 text-cyan-700" },
-  SOCIAL_POST: { label: "Social",      color: "bg-pink-100 text-pink-700" },
-  MEETING:     { label: "Meeting",     color: "bg-indigo-100 text-indigo-700" },
-  REVIEW:      { label: "Review",      color: "bg-orange-100 text-orange-700" },
-  STRATEGY:    { label: "Strategy",    color: "bg-teal-100 text-teal-700" },
-  OTHER:       { label: "Other",       color: "bg-gray-100 text-gray-700" },
+  DESIGN:      { label: "Design",   color: "bg-purple-100 text-purple-700" },
+  COPY:        { label: "Copy",     color: "bg-yellow-100 text-yellow-700" },
+  DEVELOPMENT: { label: "Dev",      color: "bg-cyan-100 text-cyan-700" },
+  SOCIAL_POST: { label: "Social",   color: "bg-pink-100 text-pink-700" },
+  MEETING:     { label: "Meeting",  color: "bg-indigo-100 text-indigo-700" },
+  REVIEW:      { label: "Review",   color: "bg-orange-100 text-orange-700" },
+  STRATEGY:    { label: "Strategy", color: "bg-teal-100 text-teal-700" },
+  OTHER:       { label: "Other",    color: "bg-gray-100 text-gray-700" },
 } as const;
 
 const TASK_TYPES = ["DESIGN", "COPY", "DEVELOPMENT", "SOCIAL_POST", "MEETING", "REVIEW", "STRATEGY", "OTHER"] as const;
-const PRIORITIES  = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
-// ─── Create-task form schema ─────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const createTaskSchema = z.object({
+function initials(name: string | null | undefined, email: string): string {
+  if (name) {
+    const parts = name.trim().split(" ");
+    return parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+      : name.slice(0, 2).toUpperCase();
+  }
+  return email.slice(0, 2).toUpperCase();
+}
+
+function AvatarBubble({ user }: { user: Pick<User, "name" | "email" | "image"> }) {
+  if (user.image) {
+    return (
+      <img
+        src={user.image}
+        alt={user.name ?? user.email}
+        className="w-5 h-5 rounded-full border border-white dark:border-slate-700 object-cover"
+      />
+    );
+  }
+  return (
+    <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[9px] font-bold border border-white dark:border-slate-700">
+      {initials(user.name, user.email)}
+    </div>
+  );
+}
+
+// ─── Task form schema ─────────────────────────────────────────────────────────
+
+const taskFormSchema = z.object({
   title:       z.string().min(1, "Title is required"),
   description: z.string().optional(),
   type:        z.enum(TASK_TYPES),
   priority:    z.enum(PRIORITIES),
   dueDate:     z.string().optional(),
+  assigneeId:  z.string().optional(),
 });
+type TaskFormValues = z.infer<typeof taskFormSchema>;
 
-type CreateTaskValues = z.infer<typeof createTaskSchema>;
+// ─── Task form (shared by create & edit) ─────────────────────────────────────
+
+function TaskForm({
+  defaultValues,
+  stageId,
+  stages,
+  agencyMembers,
+  onSubmit,
+  isPending,
+  onClose,
+}: {
+  defaultValues: TaskFormValues;
+  stageId: string;
+  stages: ProjectStage[];
+  agencyMembers: Pick<User, "id" | "name" | "email">[];
+  onSubmit: (values: TaskFormValues) => void;
+  isPending: boolean;
+  onClose: () => void;
+}) {
+  const form = useForm<TaskFormValues>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues,
+  });
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="title"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Title</FormLabel>
+              <FormControl><Input placeholder="Task title…" {...field} /></FormControl>
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Description <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+              <FormControl><Textarea placeholder="Add more context…" rows={3} {...field} /></FormControl>
+            </FormItem>
+          )}
+        />
+
+        <div className="grid grid-cols-2 gap-3">
+          <FormField
+            control={form.control}
+            name="type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Type</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {TASK_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Priority</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <FormField
+            control={form.control}
+            name="assigneeId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Assign to <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                <Select value={field.value ?? "NONE"} onValueChange={(v) => field.onChange(v === "NONE" ? "" : v)}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="NONE">Unassigned</SelectItem>
+                    {agencyMembers.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name ?? u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Due date <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                <FormControl><Input type="date" {...field} /></FormControl>
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormItem>
+          <FormLabel>Stage</FormLabel>
+          <Select disabled value={stageId}>
+            <SelectTrigger>
+              <SelectValue>{stages.find((s) => s.id === stageId)?.name ?? ""}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </FormItem>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Save
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
+}
+
+// ─── Create task modal ────────────────────────────────────────────────────────
+
+function CreateTaskModal({
+  open, onClose, projectId, stageId, agencyId, userId, stages, agencyMembers,
+}: {
+  open: boolean; onClose: () => void;
+  projectId: string; stageId: string; agencyId: string; userId: string;
+  stages: ProjectStage[];
+  agencyMembers: Pick<User, "id" | "name" | "email">[];
+}) {
+  const { toast } = useToast();
+
+  const createMutation = useMutation({
+    mutationFn: async (values: TaskFormValues) => {
+      const body: Record<string, unknown> = {
+        title:       values.title,
+        type:        values.type,
+        priority:    values.priority,
+        projectId,
+        stageId,
+        agencyId,
+        createdById: userId,
+      };
+      if (values.description) body.description = values.description;
+      if (values.dueDate)     body.dueDate     = new Date(values.dueDate).toISOString();
+
+      const res  = await apiRequest("POST", "/api/tasks", body);
+      const task = await res.json() as Task;
+
+      if (values.assigneeId) {
+        await apiRequest("POST", `/api/tasks/${task.id}/assignees`, { userId: values.assigneeId });
+      }
+      return task;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
+      toast({ title: "Task created" });
+      onClose();
+    },
+    onError: (e: Error) => {
+      toast({ title: "Failed to create task", description: e.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>New task</DialogTitle></DialogHeader>
+        <TaskForm
+          defaultValues={{ title: "", description: "", type: "DESIGN", priority: "MEDIUM", dueDate: "", assigneeId: "" }}
+          stageId={stageId}
+          stages={stages}
+          agencyMembers={agencyMembers}
+          onSubmit={(v) => createMutation.mutate(v)}
+          isPending={createMutation.isPending}
+          onClose={onClose}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit task modal ──────────────────────────────────────────────────────────
+
+function EditTaskModal({
+  task, open, onClose, projectId, stages, agencyMembers,
+}: {
+  task: Task; open: boolean; onClose: () => void;
+  projectId: string; stages: ProjectStage[];
+  agencyMembers: Pick<User, "id" | "name" | "email">[];
+}) {
+  const { toast } = useToast();
+
+  const { data: assignees = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
+    queryKey: [`/api/tasks/${task.id}/assignees`],
+    enabled: open,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (values: TaskFormValues) => {
+      const body: Record<string, unknown> = {
+        title:    values.title,
+        type:     values.type,
+        priority: values.priority,
+      };
+      if (values.description !== undefined) body.description = values.description || null;
+      if (values.dueDate) body.dueDate = new Date(values.dueDate).toISOString();
+      else                body.dueDate = null;
+
+      const res = await apiRequest("PUT", `/api/tasks/${task.id}`, body);
+
+      const currentAssigneeId = assignees[0]?.id ?? null;
+      const newAssigneeId = values.assigneeId || null;
+
+      if (currentAssigneeId && currentAssigneeId !== newAssigneeId) {
+        await apiRequest("DELETE", `/api/tasks/${task.id}/assignees/${currentAssigneeId}`);
+      }
+      if (newAssigneeId && newAssigneeId !== currentAssigneeId) {
+        await apiRequest("POST", `/api/tasks/${task.id}/assignees`, { userId: newAssigneeId });
+      }
+
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/assignees`] });
+      toast({ title: "Task updated" });
+      onClose();
+    },
+    onError: (e: Error) => {
+      toast({ title: "Failed to update task", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const dueDateStr = task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : "";
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Edit task</DialogTitle></DialogHeader>
+        <TaskForm
+          defaultValues={{
+            title:       task.title,
+            description: task.description ?? "",
+            type:        (task.type as typeof TASK_TYPES[number]) ?? "DESIGN",
+            priority:    (task.priority as typeof PRIORITIES[number]) ?? "MEDIUM",
+            dueDate:     dueDateStr,
+            assigneeId:  assignees[0]?.id ?? "",
+          }}
+          stageId={task.stageId ?? stages[0]?.id ?? ""}
+          stages={stages}
+          agencyMembers={agencyMembers}
+          onSubmit={(v) => updateMutation.mutate(v)}
+          isPending={updateMutation.isPending}
+          onClose={onClose}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ─── TaskCard ────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, isDragging }: { task: Task; isDragging?: boolean }) {
+function TaskCard({
+  task, isDragging, agencyMembers, onEdit,
+}: {
+  task: Task; isDragging?: boolean;
+  agencyMembers: Pick<User, "id" | "name" | "email" | "image">[];
+  onEdit: (task: Task) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: task.id });
 
-  const style = transform
-    ? { transform: CSS.Translate.toString(transform) }
-    : undefined;
+  const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
 
   const priority = PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG];
   const type     = TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG];
+
+  const { data: assignees = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
+    queryKey: [`/api/tasks/${task.id}/assignees`],
+  });
+
+  const displayAssignee = assignees[0] ?? agencyMembers.find((u) => u.id === task.createdById) ?? null;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm cursor-grab active:cursor-grabbing transition-all ${isDragging ? "opacity-30" : "hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600"}`}
-      {...attributes}
-      {...listeners}
+      className={`group relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm transition-all ${isDragging ? "opacity-30" : "hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600"}`}
     >
+      {/* Drag handle + edit button */}
       <div className="flex items-start gap-2">
-        <GripVertical className="w-4 h-4 text-slate-300 dark:text-slate-600 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div
+          {...attributes}
+          {...listeners}
+          className="mt-0.5 shrink-0 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <GripVertical className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+        </div>
+
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug line-clamp-2">
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 pr-5">
             {task.title}
           </p>
 
           <div className="flex flex-wrap gap-1 mt-2">
             {type && (
               <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-md ${type.color}`}>
-                <Tag className="w-2.5 h-2.5 mr-1" />
-                {type.label}
+                <Tag className="w-2.5 h-2.5 mr-1" />{type.label}
               </span>
             )}
             {priority && (
               <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-md ${priority.color}`}>
-                <Flag className="w-2.5 h-2.5 mr-1" />
-                {priority.label}
+                <Flag className="w-2.5 h-2.5 mr-1" />{priority.label}
               </span>
             )}
           </div>
 
-          {task.dueDate && (
-            <div className="flex items-center gap-1 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <Calendar className="w-3 h-3" />
-              <span>{format(new Date(task.dueDate), "MMM d")}</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between mt-2">
+            {task.dueDate ? (
+              <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <Calendar className="w-3 h-3" />
+                <span>{format(new Date(task.dueDate), "MMM d")}</span>
+              </div>
+            ) : <div />}
+
+            {displayAssignee ? (
+              <AvatarBubble user={displayAssignee} />
+            ) : (
+              <UserCircle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Edit button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+        className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+        title="Edit task"
+      >
+        <Pencil className="w-3 h-3" />
+      </button>
     </div>
   );
 }
@@ -142,29 +487,22 @@ function TaskCard({ task, isDragging }: { task: Task; isDragging?: boolean }) {
 // ─── KanbanColumn ────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage,
-  tasks,
-  activeId,
-  onAddTask,
+  stage, tasks, activeId, onAddTask, agencyMembers, onEdit,
 }: {
-  stage: ProjectStage;
-  tasks: Task[];
-  activeId: string | null;
+  stage: ProjectStage; tasks: Task[]; activeId: string | null;
   onAddTask: (stageId: string) => void;
+  agencyMembers: Pick<User, "id" | "name" | "email" | "image">[];
+  onEdit: (task: Task) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
-
   const columnColor = stage.color ?? "#6366f1";
 
   return (
     <div className="flex flex-col w-72 shrink-0">
-      {/* Column header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: columnColor }} />
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            {stage.name}
-          </span>
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{stage.name}</span>
           <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 dark:text-slate-500 px-1.5 py-0.5 rounded-full font-medium">
             {tasks.length}
           </span>
@@ -178,7 +516,6 @@ function KanbanColumn({
         </button>
       </div>
 
-      {/* Drop area */}
       <div
         ref={setNodeRef}
         className={`flex-1 min-h-[200px] flex flex-col gap-2 rounded-xl p-2 transition-colors ${
@@ -188,14 +525,18 @@ function KanbanColumn({
         }`}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} isDragging={activeId === task.id} />
+          <TaskCard
+            key={task.id}
+            task={task}
+            isDragging={activeId === task.id}
+            agencyMembers={agencyMembers}
+            onEdit={onEdit}
+          />
         ))}
 
         {tasks.length === 0 && (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-xs text-slate-400 dark:text-slate-600 text-center px-4">
-              Drop tasks here
-            </p>
+            <p className="text-xs text-slate-400 dark:text-slate-600 text-center px-4">Drop tasks here</p>
           </div>
         )}
       </div>
@@ -203,193 +544,15 @@ function KanbanColumn({
   );
 }
 
-// ─── CreateTaskModal ─────────────────────────────────────────────────────────
+// ─── EmptyState ───────────────────────────────────────────────────────────────
 
-function CreateTaskModal({
-  open,
-  onClose,
-  projectId,
-  stageId,
-  agencyId,
-  stages,
-}: {
-  open: boolean;
-  onClose: () => void;
-  projectId: string;
-  stageId: string;
-  agencyId: string;
-  stages: ProjectStage[];
-}) {
-  const { toast } = useToast();
-
-  const form = useForm<CreateTaskValues>({
-    resolver: zodResolver(createTaskSchema),
-    defaultValues: {
-      title:       "",
-      description: "",
-      type:        "DESIGN",
-      priority:    "MEDIUM",
-      dueDate:     "",
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (values: CreateTaskValues) => {
-      const body: Record<string, unknown> = {
-        title:     values.title,
-        type:      values.type,
-        priority:  values.priority,
-        projectId,
-        stageId,
-        agencyId,
-      };
-      if (values.description) body.description = values.description;
-      if (values.dueDate)     body.dueDate     = new Date(values.dueDate).toISOString();
-
-      const res = await apiRequest("POST", "/api/tasks", body);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
-      toast({ title: "Task created", description: "The task has been added to the board." });
-      form.reset();
-      onClose();
-    },
-    onError: (e: Error) => {
-      toast({ title: "Failed to create task", description: e.message, variant: "destructive" });
-    },
-  });
-
+function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New task</DialogTitle>
-        </DialogHeader>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Task title…" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Add more context…" rows={3} {...field} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {TASK_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {TYPE_CONFIG[t].label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {PRIORITIES.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {PRIORITY_CONFIG[p].label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="dueDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Due date <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormItem>
-                <FormLabel>Stage</FormLabel>
-                <Select disabled value={stageId}>
-                  <SelectTrigger>
-                    <SelectValue>
-                      {stages.find((s) => s.id === stageId)?.name ?? ""}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {stages.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Create task
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+    <div className="flex flex-col items-center justify-center h-64 text-center">
+      <div className="mb-4">{icon}</div>
+      <h3 className="text-base font-semibold text-slate-600 dark:text-slate-300 mb-1">{title}</h3>
+      <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{description}</p>
+    </div>
   );
 }
 
@@ -399,13 +562,15 @@ export default function Tasks() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const agencyId = currentUser?.agencyId ?? "";
+  const userId   = currentUser?.id ?? "";
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [filterPriority, setFilterPriority]       = useState<string>("ALL");
-  const [filterType,     setFilterType]           = useState<string>("ALL");
-  const [activeId,       setActiveId]             = useState<string | null>(null);
-  const [modalOpen,      setModalOpen]            = useState(false);
-  const [modalStageId,   setModalStageId]         = useState<string>("");
+  const [filterPriority,    setFilterPriority]    = useState<string>("ALL");
+  const [filterType,        setFilterType]        = useState<string>("ALL");
+  const [filterAssignee,    setFilterAssignee]    = useState<string>("ALL");
+  const [activeId,          setActiveId]          = useState<string | null>(null);
+  const [createModal,       setCreateModal]       = useState<{ open: boolean; stageId: string }>({ open: false, stageId: "" });
+  const [editTask,          setEditTask]          = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -417,47 +582,47 @@ export default function Tasks() {
     enabled: !!agencyId,
   });
 
-  // Auto-select first project
   const effectiveProjectId = selectedProjectId || projects[0]?.id || "";
 
-  // Fetch stages for selected project
+  // Fetch stages
   const { data: stages = [], isLoading: stagesLoading } = useQuery<ProjectStage[]>({
     queryKey: [`/api/projects/${effectiveProjectId}/stages`],
     enabled: !!effectiveProjectId,
   });
 
-  // Fetch tasks for selected project
+  // Fetch tasks
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: [`/api/tasks?projectId=${effectiveProjectId}`],
     enabled: !!effectiveProjectId,
   });
 
-  // Apply filters
+  // Fetch agency members (for assignee selector + filter)
+  const { data: agencyMembers = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
+    queryKey: [`/api/agencies/${agencyId}/users`],
+    enabled: !!agencyId,
+  });
+
+  // Apply filters — assignee filter checks task.createdById as proxy until full assignee data is loaded
   const filteredTasks = useMemo(() => {
     return allTasks.filter((t) => {
       if (filterPriority !== "ALL" && t.priority !== filterPriority) return false;
-      if (filterType !== "ALL" && t.type !== filterType) return false;
+      if (filterType     !== "ALL" && t.type     !== filterType)     return false;
+      if (filterAssignee !== "ALL" && t.createdById !== filterAssignee) return false;
       return true;
     });
-  }, [allTasks, filterPriority, filterType]);
+  }, [allTasks, filterPriority, filterType, filterAssignee]);
 
   // Group tasks by stage
   const tasksByStage = useMemo(() => {
     const map: Record<string, Task[]> = {};
     stages.forEach((s) => { map[s.id] = []; });
     filteredTasks.forEach((t) => {
-      if (t.stageId && map[t.stageId]) {
-        map[t.stageId].push(t);
-      }
+      if (t.stageId && map[t.stageId]) map[t.stageId].push(t);
     });
     return map;
   }, [stages, filteredTasks]);
 
-  // The dragged task (for DragOverlay)
-  const activeTask = useMemo(
-    () => allTasks.find((t) => t.id === activeId) ?? null,
-    [allTasks, activeId],
-  );
+  const activeTask = useMemo(() => allTasks.find((t) => t.id === activeId) ?? null, [allTasks, activeId]);
 
   const moveTaskMutation = useMutation({
     mutationFn: async ({ taskId, stageId }: { taskId: string; stageId: string }) => {
@@ -473,18 +638,15 @@ export default function Tasks() {
     },
   });
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string);
-  }
+  function handleDragStart(event: DragStartEvent) { setActiveId(event.active.id as string); }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
-    const taskId   = active.id as string;
-    const stageId  = over.id as string;
-    const task     = allTasks.find((t) => t.id === taskId);
+    const taskId  = active.id as string;
+    const stageId = over.id  as string;
+    const task    = allTasks.find((t) => t.id === taskId);
     if (!task || task.stageId === stageId) return;
 
     // Optimistic update
@@ -492,19 +654,13 @@ export default function Tasks() {
       [`/api/tasks?projectId=${effectiveProjectId}`],
       (prev = []) => prev.map((t) => t.id === taskId ? { ...t, stageId } : t),
     );
-
     moveTaskMutation.mutate({ taskId, stageId });
-  }
-
-  function openCreateModal(stageId: string) {
-    setModalStageId(stageId);
-    setModalOpen(true);
   }
 
   const isLoading   = projectsLoading || stagesLoading || tasksLoading;
   const hasProjects = projects.length > 0;
   const hasStages   = stages.length > 0;
-  const anyFilter   = filterPriority !== "ALL" || filterType !== "ALL";
+  const anyFilter   = filterPriority !== "ALL" || filterType !== "ALL" || filterAssignee !== "ALL";
 
   return (
     <div className="flex flex-col h-full">
@@ -515,29 +671,32 @@ export default function Tasks() {
             <Kanban className="w-5 h-5 text-indigo-500" />
             <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">Tasks</h1>
 
-            {/* Project selector */}
             {hasProjects && (
-              <Select
-                value={effectiveProjectId}
-                onValueChange={setSelectedProjectId}
-              >
+              <Select value={effectiveProjectId} onValueChange={setSelectedProjectId}>
                 <SelectTrigger className="w-52 h-8 text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
+                  {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
           </div>
 
-          {/* Filters + New Task */}
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-slate-400" />
+
+            <Select value={filterAssignee} onValueChange={setFilterAssignee}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="Assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All members</SelectItem>
+                {agencyMembers.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <Select value={filterPriority} onValueChange={setFilterPriority}>
               <SelectTrigger className="h-8 w-32 text-xs">
@@ -545,30 +704,25 @@ export default function Tasks() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All priorities</SelectItem>
-                {PRIORITIES.map((p) => (
-                  <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>
-                ))}
+                {PRIORITIES.map((p) => <SelectItem key={p} value={p}>{PRIORITY_CONFIG[p].label}</SelectItem>)}
               </SelectContent>
             </Select>
 
             <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectTrigger className="h-8 w-28 text-xs">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All types</SelectItem>
-                {TASK_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>
-                ))}
+                {TASK_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_CONFIG[t].label}</SelectItem>)}
               </SelectContent>
             </Select>
 
             {anyFilter && (
               <Button
-                variant="ghost"
-                size="sm"
+                variant="ghost" size="sm"
                 className="h-8 px-2 text-xs text-slate-500"
-                onClick={() => { setFilterPriority("ALL"); setFilterType("ALL"); }}
+                onClick={() => { setFilterPriority("ALL"); setFilterType("ALL"); setFilterAssignee("ALL"); }}
               >
                 <X className="w-3 h-3 mr-1" /> Clear
               </Button>
@@ -576,9 +730,8 @@ export default function Tasks() {
 
             {hasStages && (
               <Button
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => openCreateModal(stages[0]?.id ?? "")}
+                size="sm" className="h-8 text-xs"
+                onClick={() => setCreateModal({ open: true, stageId: stages[0]?.id ?? "" })}
               >
                 <Plus className="w-4 h-4 mr-1" /> New task
               </Button>
@@ -586,10 +739,14 @@ export default function Tasks() {
           </div>
         </div>
 
-        {/* Active filter summary */}
         {anyFilter && (
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-slate-400">Filtered:</span>
+            {filterAssignee !== "ALL" && (
+              <Badge variant="secondary" className="text-xs">
+                {agencyMembers.find((u) => u.id === filterAssignee)?.name ?? filterAssignee}
+              </Badge>
+            )}
             {filterPriority !== "ALL" && (
               <Badge variant="secondary" className="text-xs">
                 {PRIORITY_CONFIG[filterPriority as keyof typeof PRIORITY_CONFIG]?.label}
@@ -600,9 +757,7 @@ export default function Tasks() {
                 {TYPE_CONFIG[filterType as keyof typeof TYPE_CONFIG]?.label}
               </Badge>
             )}
-            <span className="text-xs text-slate-400">
-              — {filteredTasks.length} of {allTasks.length} tasks
-            </span>
+            <span className="text-xs text-slate-400">— {filteredTasks.length} of {allTasks.length} tasks</span>
           </div>
         )}
       </div>
@@ -626,11 +781,7 @@ export default function Tasks() {
             description="This project has no Kanban stages yet. Add stages to start organising tasks."
           />
         ) : (
-          <DndContext
-            sensors={sensors}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="flex gap-5 items-start">
               {stages.map((stage) => (
                 <KanbanColumn
@@ -638,7 +789,9 @@ export default function Tasks() {
                   stage={stage}
                   tasks={tasksByStage[stage.id] ?? []}
                   activeId={activeId}
-                  onAddTask={openCreateModal}
+                  onAddTask={(stageId) => setCreateModal({ open: true, stageId })}
+                  agencyMembers={agencyMembers}
+                  onEdit={setEditTask}
                 />
               ))}
             </div>
@@ -647,9 +800,7 @@ export default function Tasks() {
               {activeTask && (
                 <div className="rotate-2 opacity-95">
                   <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-xl w-72">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 line-clamp-2">
-                      {activeTask.title}
-                    </p>
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 line-clamp-2">{activeTask.title}</p>
                     <div className="flex gap-1 mt-2">
                       {activeTask.type && (
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${TYPE_CONFIG[activeTask.type as keyof typeof TYPE_CONFIG]?.color}`}>
@@ -671,36 +822,30 @@ export default function Tasks() {
       </div>
 
       {/* ── Create task modal ── */}
-      {modalOpen && effectiveProjectId && (
+      {createModal.open && effectiveProjectId && (
         <CreateTaskModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          open={createModal.open}
+          onClose={() => setCreateModal({ open: false, stageId: "" })}
           projectId={effectiveProjectId}
-          stageId={modalStageId}
+          stageId={createModal.stageId}
           agencyId={agencyId}
+          userId={userId}
           stages={stages}
+          agencyMembers={agencyMembers}
         />
       )}
-    </div>
-  );
-}
 
-// ─── EmptyState ───────────────────────────────────────────────────────────────
-
-function EmptyState({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center h-64 text-center">
-      <div className="mb-4">{icon}</div>
-      <h3 className="text-base font-semibold text-slate-600 dark:text-slate-300 mb-1">{title}</h3>
-      <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">{description}</p>
+      {/* ── Edit task modal ── */}
+      {editTask && (
+        <EditTaskModal
+          task={editTask}
+          open={!!editTask}
+          onClose={() => setEditTask(null)}
+          projectId={effectiveProjectId}
+          stages={stages}
+          agencyMembers={agencyMembers}
+        />
+      )}
     </div>
   );
 }

@@ -4,8 +4,12 @@ import { WebSocketServer } from "ws";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
 import {
   type User,
+  taskAssignees,
+  users,
   insertUserSchema,
   insertAgencySchema,
   insertClientSchema,
@@ -374,6 +378,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const success = await storage.deleteTask(req.params.id);
       if (!success) return res.status(404).json({ error: "Task not found" });
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Task Assignees ──────────────────────────────────────────────────────────
+
+  app.get("/api/tasks/:taskId/assignees", requireAuth, async (req, res) => {
+    try {
+      const rows = await db
+        .select({ id: users.id, name: users.name, email: users.email, image: users.image })
+        .from(taskAssignees)
+        .innerJoin(users, eq(taskAssignees.userId, users.id))
+        .where(eq(taskAssignees.taskId, req.params.taskId));
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/tasks/:taskId/assignees", requireAuth, async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId is required" });
+      await db
+        .insert(taskAssignees)
+        .values({ taskId: req.params.taskId, userId })
+        .onConflictDoNothing();
+      res.status(201).json({ taskId: req.params.taskId, userId });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/tasks/:taskId/assignees/:userId", requireAuth, async (req, res) => {
+    try {
+      await db
+        .delete(taskAssignees)
+        .where(
+          and(
+            eq(taskAssignees.taskId, req.params.taskId),
+            eq(taskAssignees.userId, req.params.userId),
+          ),
+        );
       res.status(204).send();
     } catch (e: any) {
       res.status(500).json({ error: e.message });
