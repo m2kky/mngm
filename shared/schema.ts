@@ -39,6 +39,8 @@ export const workspaceEventTypeEnum = pgEnum("workspace_event_type", [
   "COMMENT_ADDED", "COMMENT_DELETED", "FILE_UPLOADED", "FILE_DELETED",
   "CLIENT_CREATED", "CLIENT_UPDATED", "PROJECT_CREATED", "PROJECT_UPDATED",
   "REVIEW_SUBMITTED", "MEMBER_ADDED", "MEMBER_REMOVED",
+  "TIMER_STARTED", "TIMER_PAUSED", "TIMER_RESUMED", "TIMER_STOPPED",
+  "STAGE_CHANGED", "STATUS_CHANGED",
 ]);
 export const invitationStatusEnum = pgEnum("invitation_status", ["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]);
 
@@ -155,6 +157,7 @@ export const clients = pgTable("clients", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug"),
+  email: text("email"),
   status: clientStatusEnum("status").notNull().default("ACTIVE"),
   industry: text("industry"),
   website: text("website"),
@@ -202,6 +205,7 @@ export const clientPortalUsers = pgTable("client_portal_users", {
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   contactId: text("contact_id").unique().references(() => clientContacts.id, { onDelete: "set null" }),
+  userId: text("user_id").unique().references(() => users.id, { onDelete: "set null" }),
   email: text("email").notNull(),
   name: text("name").notNull(),
   image: text("image"),
@@ -308,13 +312,13 @@ export const projectStages = pgTable("project_stages", {
   isDefault: boolean("is_default").notNull().default(false),
   isDone: boolean("is_done").notNull().default(false),
   isClientReview: boolean("is_client_review").notNull().default(false),
-  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex("project_stages_project_name_idx").on(t.projectId, t.name),
-  uniqueIndex("project_stages_project_order_idx").on(t.projectId, t.order),
-  index("project_stages_project_id_idx").on(t.projectId),
+  uniqueIndex("project_stages_agency_name_idx").on(t.agencyId, t.name),
+  uniqueIndex("project_stages_agency_order_idx").on(t.agencyId, t.order),
+  index("project_stages_agency_id_idx").on(t.agencyId),
 ]);
 
 export const tasks = pgTable("tasks", {
@@ -938,7 +942,13 @@ export const insertClientStrategySchema = createInsertSchema(clientStrategies).o
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProjectMemberSchema = createInsertSchema(projectMembers).omit({ createdAt: true });
 export const insertProjectStageSchema = createInsertSchema(projectStages).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  dueDate: z.coerce.date().nullable().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  completedAt: z.coerce.date().nullable().optional(),
+  approvedAt: z.coerce.date().nullable().optional(),
+  rejectedAt: z.coerce.date().nullable().optional(),
+});
 export const insertTaskAssigneeSchema = createInsertSchema(taskAssignees).omit({ createdAt: true });
 export const insertSubtaskSchema = createInsertSchema(subtasks).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskDependencySchema = createInsertSchema(taskDependencies).omit({ createdAt: true });

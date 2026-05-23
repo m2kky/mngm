@@ -324,15 +324,7 @@ export function CommandPaletteProvider({ children, onQuickCreate, onOpenDetail }
               {theme === "dark" ? <Sun /> : <Moon />}
               <span>Toggle theme ({theme === "dark" ? "Light" : "Dark"})</span>
             </CommandItem>
-            <CommandItem
-              value="action toggle language"
-              onSelect={() =>
-                runAction(() => setLanguage(language === "en" ? "ar" : "en"))
-              }
-            >
-              <Languages />
-              <span>Switch language ({language === "en" ? "العربية" : "English"})</span>
-            </CommandItem>
+
             <CommandItem
               value="action sign out"
               onSelect={() => runAction(() => void logout())}

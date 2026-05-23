@@ -143,6 +143,11 @@ function Router() {
           <Settings />
         </InternalRoute>
       </Route>
+      <Route path="/profile">
+        <InternalRoute>
+          <Settings />
+        </InternalRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

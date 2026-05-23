@@ -19,7 +19,7 @@ import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
   Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
-  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown,
+  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown, Play,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Task, ProjectStage, Project, User, Client } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -54,6 +55,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/layout/PageShell";
 import { useDetailPanel } from "@/components/detail/DetailPanel";
+import { useTimer } from "@/hooks/useTimer";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -126,6 +128,7 @@ const taskFormSchema = z.object({
   priority:    z.enum(PRIORITIES),
   dueDate:     z.string().optional(),
   assigneeId:  z.string().optional(),
+  estimatedMinutes: z.coerce.number().min(0).optional(),
 });
 type TaskFormValues = z.infer<typeof taskFormSchema>;
 
@@ -250,6 +253,20 @@ function TaskForm({
 
           <FormField
             control={form.control}
+            name="estimatedMinutes"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Expected Time (min) <span className="text-slate-400 font-normal">(optional)</span></FormLabel>
+                <FormControl><Input type="number" placeholder="e.g. 90" {...field} value={field.value ?? ""} /></FormControl>
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+
+          <FormField
+            control={form.control}
             name="dueDate"
             render={({ field }) => (
               <FormItem>
@@ -298,7 +315,7 @@ function TaskForm({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending || !projectId || !stageId}>
             {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Save
           </Button>
@@ -324,10 +341,10 @@ function CreateTaskModal({
   const [projectId, setProjectId] = useState(initialProjectId);
   const [stageId, setStageId] = useState(initialStageId);
 
-  // Fetch stages dynamically based on selected project
+  // Fetch stages globally based on agency
   const { data: stages = [] } = useQuery<ProjectStage[]>({
-    queryKey: [`/api/projects/${projectId}/stages`],
-    enabled: !!projectId,
+    queryKey: [`/api/agencies/${agencyId}/stages`],
+    enabled: !!agencyId,
   });
 
   // Keep stageId valid when project changes
@@ -345,13 +362,14 @@ function CreateTaskModal({
         title:       values.title,
         type:        values.type,
         priority:    values.priority,
-        projectId,
-        stageId,
+        projectId:   projectId || undefined,
+        stageId:     stageId || undefined,
         agencyId,
         createdById: userId,
       };
       if (values.description) body.description = values.description;
       if (values.dueDate)     body.dueDate     = new Date(values.dueDate).toISOString();
+      if (values.estimatedMinutes) body.estimatedMinutes = values.estimatedMinutes;
 
       const res  = await apiRequest("POST", "/api/tasks", body);
       const task = await res.json() as Task;
@@ -362,7 +380,7 @@ function CreateTaskModal({
       return task;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${projectId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/task-assignees`] });
       toast({ title: "Task created" });
       onClose();
@@ -402,12 +420,15 @@ function CreateTaskModal({
 // ─── TaskCard ────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, isDragging, onEdit, assigneeEntries,
+  task, isDragging, onEdit, assigneeEntries, projects, clients
 }: {
   task: Task; isDragging?: boolean;
   onEdit: (task: Task) => void;
   assigneeEntries: TaskAssigneeEntry[];
+  projects: Project[];
+  clients: Client[];
 }) {
+  const { startTimer } = useTimer();
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: task.id });
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
@@ -420,11 +441,14 @@ function TaskCard({
     ? { name: firstAssignee.userName, email: firstAssignee.userEmail, image: firstAssignee.userImage }
     : null;
 
+  const project = projects.find(p => p.id === task.projectId);
+  const client = clients.find(c => c.id === project?.clientId);
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm transition-all ${isDragging ? "opacity-30" : "hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600"}`}
+      className={`group relative bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/40 dark:border-white/10 p-3 shadow-sm transition-all ${isDragging ? "opacity-30" : "hover:shadow-md hover:border-white/60 dark:hover:border-white/20 hover:bg-white/80 dark:hover:bg-slate-900/80"}`}
     >
       {/* Drag handle + edit button */}
       <div className="flex items-start gap-2">
@@ -440,6 +464,12 @@ function TaskCard({
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 pr-5">
             {task.title}
           </p>
+
+          <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="truncate max-w-[100px] font-medium" title={client?.name}>{client?.name || "No Client"}</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="truncate max-w-[100px]" title={project?.name}>{project?.name || "No Project"}</span>
+          </div>
 
           <div className="flex flex-wrap gap-1 mt-2">
             {type && (
@@ -479,6 +509,15 @@ function TaskCard({
       >
         <Pencil className="w-3 h-3" />
       </button>
+
+      {/* Play button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); startTimer(task.id, task.estimatedMinutes); }}
+        className="absolute top-2 right-8 w-5 h-5 rounded flex items-center justify-center text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 hover:text-primary dark:hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
+        title="Start Timer"
+      >
+        <Play className="w-3 h-3" />
+      </button>
     </div>
   );
 }
@@ -486,12 +525,14 @@ function TaskCard({
 // ─── KanbanColumn ────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, tasks, activeId, onAddTask, onEdit, taskAssigneeMap,
+  stage, tasks, activeId, onAddTask, onEdit, taskAssigneeMap, projects, clients
 }: {
   stage: ProjectStage; tasks: Task[]; activeId: string | null;
   onAddTask: (stageId: string) => void;
   onEdit: (task: Task) => void;
   taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
+  projects: Project[];
+  clients: Client[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const columnColor = stage.color ?? "#6366f1";
@@ -520,7 +561,7 @@ function KanbanColumn({
         className={`flex-1 min-h-[200px] flex flex-col gap-2 rounded-xl p-2 transition-colors ${
           isOver
             ? "bg-indigo-50 dark:bg-indigo-950/30 ring-2 ring-indigo-300 dark:ring-indigo-700"
-            : "bg-slate-50 dark:bg-slate-900/50"
+            : "bg-transparent"
         }`}
       >
         {tasks.map((task) => (
@@ -530,6 +571,8 @@ function KanbanColumn({
             isDragging={activeId === task.id}
             assigneeEntries={taskAssigneeMap[task.id] ?? []}
             onEdit={onEdit}
+            projects={projects}
+            clients={clients}
           />
         ))}
 
@@ -727,33 +770,35 @@ const STAGE_COLORS = ["#6366f1","#f59e0b","#8b5cf6","#10b981","#ef4444","#3b82f6
 const stageFormSchema = z.object({
   name:  z.string().min(1, "Stage name is required"),
   color: z.string().min(1),
+  isClientReview: z.boolean().default(false),
 });
 type StageFormValues = z.infer<typeof stageFormSchema>;
 
 function CreateStageModal({
-  open, onClose, projectId, nextOrder,
-}: { open: boolean; onClose: () => void; projectId: string; nextOrder: number }) {
+  open, onClose, agencyId, nextOrder,
+}: { open: boolean; onClose: () => void; agencyId: string; nextOrder: number }) {
   const { toast } = useToast();
 
   const form = useForm<StageFormValues>({
     resolver: zodResolver(stageFormSchema),
-    defaultValues: { name: "", color: "#6366f1" },
+    defaultValues: { name: "", color: "#6366f1", isClientReview: false },
   });
 
   const createMutation = useMutation({
     mutationFn: async (values: StageFormValues) => {
-      const res = await apiRequest("POST", `/api/projects/${projectId}/stages`, {
+      const res = await apiRequest("POST", `/api/agencies/${agencyId}/stages`, {
         name: values.name.trim(),
         color: values.color,
         order: nextOrder,
-        projectId,
+        isClientReview: values.isClientReview,
+        agencyId,
       });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/stages`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/agencies/${agencyId}/stages`] });
       toast({ title: "Stage added" });
-      form.reset({ name: "", color: "#6366f1" });
+      form.reset({ name: "", color: "#6366f1", isClientReview: false });
       onClose();
     },
     onError: (e: Error) => {
@@ -794,6 +839,27 @@ function CreateStageModal({
               </div>
             </FormItem>
 
+            <FormField
+              control={form.control}
+              name="isClientReview"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-3 shadow-sm bg-slate-50/50 dark:bg-slate-800/30">
+                  <div className="space-y-0.5">
+                    <FormLabel>Client Visibility</FormLabel>
+                    <p className="text-[11px] text-muted-foreground">
+                      Tasks in this stage will be visible to the client.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
               <Button type="submit" disabled={createMutation.isPending}>
@@ -827,13 +893,17 @@ function TaskListView({
   filteredTasks,
   taskAssigneeMap,
   onEdit,
+  projects,
+  clients,
 }: {
   stages: ProjectStage[];
   filteredTasks: Task[];
   taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
   onEdit: (t: Task) => void;
+  projects: Project[];
+  clients: Client[];
 }) {
-  const stageMap = Object.fromEntries(stages.map((s) => [s.id, s]));
+  const { startTimer } = useTimer();
   const grouped: Record<string, Task[]> = {};
   stages.forEach((s) => { grouped[s.id] = []; });
   filteredTasks.forEach((t) => {
@@ -858,6 +928,9 @@ function TaskListView({
                 <div className="px-4 py-3 text-xs text-muted-foreground italic">No tasks</div>
               ) : tasks.map((task) => {
                 const assignees = taskAssigneeMap[task.id] ?? [];
+                const project = projects.find(p => p.id === task.projectId);
+                const client = clients.find(c => c.id === project?.clientId);
+
                 return (
                   <div
                     key={task.id}
@@ -867,6 +940,11 @@ function TaskListView({
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{task.title}</p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className="truncate max-w-[100px]" title={client?.name}>{client?.name || "No Client"}</span>
+                        <span>•</span>
+                        <span className="truncate max-w-[100px]" title={project?.name}>{project?.name || "No Project"}</span>
+                      </div>
                     </div>
                     {task.priority && (
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 hidden sm:block ${PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.color}`}>
@@ -889,6 +967,13 @@ function TaskListView({
                         <AvatarBubble key={a.userId} user={{ name: a.userName, email: a.userEmail, image: a.userImage }} />
                       ))}
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); startTimer(task.id, task.estimatedMinutes); }}
+                      className="ml-2 w-7 h-7 shrink-0 rounded flex items-center justify-center text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+                      title="Start Timer"
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 );
               })}
@@ -909,12 +994,17 @@ function TaskTableView({
   filteredTasks,
   taskAssigneeMap,
   onEdit,
+  projects,
+  clients,
 }: {
   stages: ProjectStage[];
   filteredTasks: Task[];
   taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
   onEdit: (t: Task) => void;
+  projects: Project[];
+  clients: Client[];
 }) {
+  const { startTimer } = useTimer();
   const [sortKey, setSortKey] = useState<SortKey>("stage");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const stageOrder = Object.fromEntries(stages.map((s, i) => [s.id, i]));
@@ -987,6 +1077,9 @@ function TaskTableView({
           ) : sorted.map((task) => {
             const stage = stageMap[task.stageId ?? ""];
             const assignees = taskAssigneeMap[task.id] ?? [];
+            const project = projects.find(p => p.id === task.projectId);
+            const client = clients.find(c => c.id === project?.clientId);
+
             return (
               <TableRow
                 key={task.id}
@@ -996,6 +1089,7 @@ function TaskTableView({
               >
                 <TableCell className="font-medium max-w-[260px]">
                   <p className="truncate">{task.title}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{client?.name || "No Client"} / {project?.name || "No Project"}</p>
                 </TableCell>
                 <TableCell>
                   {stage && (
@@ -1033,6 +1127,13 @@ function TaskTableView({
                       </div>
                     )}
                   </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startTimer(task.id, task.estimatedMinutes); }}
+                    className="ml-2 w-7 h-7 shrink-0 rounded inline-flex items-center justify-center text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors align-middle"
+                    title="Start Timer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                  </button>
                 </TableCell>
               </TableRow>
             );
@@ -1052,7 +1153,7 @@ export default function Tasks() {
   const userId   = currentUser?.id ?? "";
 
   const [selectedClientId,   setSelectedClientId]   = useState<string>("ALL");
-  const [selectedProjectId,  setSelectedProjectId]  = useState<string>("");
+  const [selectedProjectId,  setSelectedProjectId]  = useState<string>("all");
   const [filterPriority,     setFilterPriority]     = useState<string>("ALL");
   const [filterType,         setFilterType]         = useState<string>("ALL");
   const [filterAssignee,     setFilterAssignee]     = useState<string>("ALL");
@@ -1095,10 +1196,10 @@ export default function Tasks() {
 
   const effectiveProjectId = selectedProjectId || (projects.length > 0 ? projects[0].id : "");
 
-  // Fetch stages
+  // Fetch stages globally
   const { data: stages = [], isLoading: stagesLoading } = useQuery<ProjectStage[]>({
-    queryKey: [`/api/projects/${effectiveProjectId}/stages`],
-    enabled: !!effectiveProjectId,
+    queryKey: [`/api/agencies/${agencyId}/stages`],
+    enabled: !!agencyId,
   });
 
   // Open the create dialog automatically when navigated with #new (e.g. from
@@ -1170,11 +1271,11 @@ export default function Tasks() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${effectiveProjectId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
     },
     onError: (e: Error) => {
       toast({ title: "Failed to move task", description: e.message, variant: "destructive" });
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks?projectId=${effectiveProjectId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
     },
   });
 
@@ -1375,6 +1476,8 @@ export default function Tasks() {
             filteredTasks={filteredTasks}
             taskAssigneeMap={taskAssigneeMap}
             onEdit={(t) => openDetail("task", t.id)}
+            projects={projects}
+            clients={clients}
           />
         ) : taskView === "table" ? (
           <TaskTableView
@@ -1382,6 +1485,8 @@ export default function Tasks() {
             filteredTasks={filteredTasks}
             taskAssigneeMap={taskAssigneeMap}
             onEdit={(t) => openDetail("task", t.id)}
+            projects={projects}
+            clients={clients}
           />
         ) : (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -1395,8 +1500,18 @@ export default function Tasks() {
                   onAddTask={(stageId) => setCreateModal({ open: true, stageId })}
                   taskAssigneeMap={taskAssigneeMap}
                   onEdit={(t) => openDetail("task", t.id)}
+                  projects={projects}
+                  clients={clients}
                 />
               ))}
+              {/* Add Stage Button */}
+              <button
+                onClick={() => setCreateStageOpen(true)}
+                className="shrink-0 w-72 flex items-center justify-center gap-2 h-12 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-colors bg-slate-50/50 dark:bg-slate-800/50"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm font-medium">Add Stage</span>
+              </button>
             </div>
 
             <DragOverlay>
@@ -1436,12 +1551,12 @@ export default function Tasks() {
       />
 
       {/* ── Create stage modal ── */}
-      {effectiveProjectId && (
+      {createStageOpen && (
         <CreateStageModal
           open={createStageOpen}
           onClose={() => setCreateStageOpen(false)}
-          projectId={effectiveProjectId}
-          nextOrder={stages.length + 1}
+          agencyId={agencyId}
+          nextOrder={stages.length}
         />
       )}
 

@@ -5,6 +5,8 @@ import {
   users, agencies, clients, projects, projectStages, tasks,
   timeEntries, taskComments, fileAssets, notifications, invitations,
   chatChannels, chatMessages, attendanceRecords, pages, verifications,
+  activityLogs,
+  clientPortalUsers,
 } from "@shared/schema";
 import {
   User, InsertUser,
@@ -25,6 +27,8 @@ import {
   AttendanceRecord, InsertAttendanceRecord,
   Page, InsertPage,
   Verification, InsertVerification,
+  ActivityLog, InsertActivityLog,
+  ClientPortalUser, InsertClientPortalUser,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -54,7 +58,7 @@ export interface IStorage {
   updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined>;
 
   // Project Stage methods
-  getProjectStages(projectId: string): Promise<ProjectStage[]>;
+  getProjectStages(agencyId: string): Promise<ProjectStage[]>;
   createProjectStage(stage: InsertProjectStage): Promise<ProjectStage>;
 
   // Task methods
@@ -116,6 +120,16 @@ export interface IStorage {
   createVerification(identifier: string, value: string, expiresAt: Date): Promise<Verification>;
   getVerification(identifier: string, value: string): Promise<Verification | undefined>;
   deleteVerification(id: string): Promise<boolean>;
+
+  // Activity methods
+  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  getTaskActivities(taskId: string): Promise<(ActivityLog & { actor: { name: string | null; image: string | null } | null })[]>;
+
+  // Client Portal Users methods
+  getClientPortalUserByEmail(email: string): Promise<ClientPortalUser | undefined>;
+  getClientPortalUserByUserId(userId: string): Promise<ClientPortalUser | undefined>;
+  createClientPortalUser(user: InsertClientPortalUser): Promise<ClientPortalUser>;
+  updateClientPortalUser(id: string, updates: Partial<ClientPortalUser>): Promise<ClientPortalUser | undefined>;
 }
 
 
@@ -214,12 +228,23 @@ export class DrizzleStorage implements IStorage {
   }
 
   // Project Stage methods
-  async getProjectStages(projectId: string): Promise<ProjectStage[]> {
-    return db.select().from(projectStages).where(eq(projectStages.projectId, projectId)).orderBy(asc(projectStages.order));
+  async getProjectStages(agencyId: string): Promise<ProjectStage[]> {
+    return db.select().from(projectStages).where(eq(projectStages.agencyId, agencyId)).orderBy(asc(projectStages.order));
   }
 
   async createProjectStage(insertStage: InsertProjectStage): Promise<ProjectStage> {
-    const result = await db.insert(projectStages).values({ ...insertStage, id: randomUUID() }).returning();
+    const now = new Date();
+    const result = await db.insert(projectStages).values({ 
+      id: randomUUID(),
+      color: null,
+      wipLimit: null,
+      ...insertStage,
+      isDefault: insertStage.isDefault ?? false,
+      isDone: insertStage.isDone ?? false,
+      isClientReview: insertStage.isClientReview ?? false,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
     return result[0];
   }
 
@@ -496,6 +521,56 @@ export class DrizzleStorage implements IStorage {
   async deleteVerification(id: string): Promise<boolean> {
     const result = await db.delete(verifications).where(eq(verifications.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Activity methods
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const result = await db.insert(activityLogs).values({ ...log, id: randomUUID() }).returning();
+    return result[0];
+  }
+
+  async getTaskActivities(taskId: string): Promise<(ActivityLog & { actor: { name: string | null; image: string | null } | null })[]> {
+    const rows = await db
+      .select({
+        log: activityLogs,
+        actor: {
+          name: users.name,
+          image: users.image,
+        }
+      })
+      .from(activityLogs)
+      .leftJoin(users, eq(activityLogs.actorUserId, users.id))
+      .where(eq(activityLogs.taskId, taskId))
+      .orderBy(desc(activityLogs.createdAt));
+
+    return rows.map(r => ({
+      ...r.log,
+      actor: r.actor?.name ? { name: r.actor.name, image: r.actor.image } : null,
+    }));
+  }
+
+  // Client Portal Users methods
+  async getClientPortalUserByEmail(email: string): Promise<ClientPortalUser | undefined> {
+    const result = await db.select().from(clientPortalUsers).where(eq(clientPortalUsers.email, email.toLowerCase()));
+    return result[0];
+  }
+
+  async getClientPortalUserByUserId(userId: string): Promise<ClientPortalUser | undefined> {
+    const result = await db.select().from(clientPortalUsers).where(eq(clientPortalUsers.userId, userId));
+    return result[0];
+  }
+
+  async createClientPortalUser(user: InsertClientPortalUser): Promise<ClientPortalUser> {
+    const result = await db.insert(clientPortalUsers).values({ ...user, id: randomUUID() }).returning();
+    return result[0];
+  }
+
+  async updateClientPortalUser(id: string, updates: Partial<ClientPortalUser>): Promise<ClientPortalUser | undefined> {
+    const result = await db.update(clientPortalUsers)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(clientPortalUsers.id, id))
+      .returning();
+    return result[0];
   }
 }
 

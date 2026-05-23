@@ -59,3 +59,8 @@ Workit.OS has a robust, fully-functioning core architecture with high-fidelity m
 - **Performance Optimization**: Ensure fast rendering of massive lists on the Kanban board using pagination or virtualization.
 - **WebSocket Reconnection Resiliency**: Hardening the WebSocket connection hooks in the client to automatically reconnect and resync active timer values following network interruptions.
 - **Type-Check Integrity**: Regular checks with `npm run check` to maintain robust TS typing as the database schema evolves.
+
+---
+
+## Session Logs
+- **[May 23, 2026 Session Log](file:///d:/Codes_Projects/mngm/docs/memory-bank/session-logs-may-23.md)**: Activity Feed Realtime setup, Client Portal Architecture, Invitations API, and Premium UI generation.

@@ -1,6 +1,8 @@
 import { Plus, Play, Rocket, FolderPlus, Users, CheckSquare } from "lucide-react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/layout/PageShell";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { RecentTasks } from "@/components/dashboard/RecentTasks";
@@ -74,8 +76,9 @@ function FirstRunState() {
 
 export default function Dashboard() {
   const { userProfile } = useAuth();
-  const { startTimer } = useTimer();
   const { trigger } = useQuickCreate();
+  const { toast } = useToast();
+  const qc = useQueryClient();
 
   const agencyId = (userProfile as any)?.agencyId;
 
@@ -86,8 +89,17 @@ export default function Dashboard() {
 
   const showFirstRun = !projectsLoading && projects.length === 0;
 
+  const checkInMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/attendance/check-in", {}).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/attendance"] });
+      toast({ title: "Checked in successfully!" });
+    },
+    onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
+  });
+
   const handleStartWork = async () => {
-    await startTimer();
+    checkInMutation.mutate();
   };
 
   const greeting = (() => {

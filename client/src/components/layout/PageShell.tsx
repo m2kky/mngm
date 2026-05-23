@@ -4,6 +4,7 @@ import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { FloatingTimer } from "./FloatingTimer";
+import { FloatingChat } from "./FloatingChat";
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink,
   BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
@@ -158,11 +159,14 @@ export function PageShell({
             </div>
           )}
 
-          <div className={cn(contentClassName)}>{children}</div>
+          <div className={cn(contentClassName, "flex flex-1 flex-col overflow-hidden")}>
+            {children}
+          </div>
         </main>
       </div>
 
       <FloatingTimer />
+      <FloatingChat />
     </div>
   );
 }

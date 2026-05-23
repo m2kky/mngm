@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Hash, Plus, Send, MessageCircle, Lock } from "lucide-react";
+import { Hash, Plus, Send, MessageCircle, Lock, SmilePlus, ChevronLeft, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { PageShell } from "@/components/layout/PageShell";
+import { SmartTextarea } from "@/components/ui/smart-textarea";
+import { MentionRenderer } from "@/components/ui/mention-renderer";
+import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface Channel {
   id: string;
@@ -59,7 +63,15 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
-export default function Chat() {
+const PRESET_STICKERS = [
+  "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Partying%20Face.png",
+  "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Red%20Heart.png",
+  "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Fire.png",
+  "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Thumbs%20Up.png",
+  "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Star-Struck.png"
+];
+
+export function ChatInterface({ isCompact = false }: { isCompact?: boolean }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -69,6 +81,7 @@ export default function Chat() {
   const [newChannelDesc, setNewChannelDesc] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showMobileList, setShowMobileList] = useState(true);
 
   // ── Fetch channels ──────────────────────────────────────────────────────────
   const { data: channels = [] } = useQuery<Channel[]>({
@@ -79,16 +92,9 @@ export default function Chat() {
   useEffect(() => {
     if (channels.length > 0 && !activeChannelId) {
       setActiveChannelId(channels[0].id);
+      setShowMobileList(false);
     }
   }, [channels, activeChannelId]);
-
-  // QuickCreate / palette deep-link: /chat#new opens the create-channel dialog.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash !== "#new") return;
-    setShowNewChannel(true);
-    history.replaceState(null, "", window.location.pathname + window.location.search);
-  }, []);
 
   // ── Fetch messages ──────────────────────────────────────────────────────────
   const { data: messages = [] } = useQuery<Message[]>({
@@ -159,6 +165,16 @@ export default function Chat() {
     }
   };
 
+  const handleSendSticker = (url: string) => {
+    if (!activeChannelId) return;
+    sendMutation.mutate(`[STICKER:${url}]`);
+  };
+
+  const onEmojiClick = (emojiData: EmojiClickData) => {
+    setDraft((prev) => prev + emojiData.emoji);
+    inputRef.current?.focus();
+  };
+
   // ── Create channel ──────────────────────────────────────────────────────────
   const createChannelMutation = useMutation({
     mutationFn: () =>
@@ -170,6 +186,7 @@ export default function Chat() {
     onSuccess: (channel: Channel) => {
       qc.invalidateQueries({ queryKey: ["/api/chat/channels"] });
       setActiveChannelId(channel.id);
+      setShowMobileList(false);
       setShowNewChannel(false);
       setNewChannelName("");
       setNewChannelDesc("");
@@ -193,171 +210,201 @@ export default function Chat() {
     return groups;
   }, []);
 
-  const chatCrumbs = [
-    { label: "Communication" },
-    { label: "Chat", href: "/chat" },
-    ...(activeChannel ? [{ label: `#${activeChannel.name}` }] : []),
-  ];
+  const selectChannel = (id: string) => {
+    setActiveChannelId(id);
+    if (isCompact) setShowMobileList(false);
+  };
+
+  const sidebarVisible = !isCompact || showMobileList;
+  const mainVisible = !isCompact || !showMobileList;
 
   return (
-    <PageShell
-      fullBleed
-      breadcrumbs={chatCrumbs}
-      title={activeChannel ? `#${activeChannel.name}` : "Chat"}
-      description={
-        activeChannel?.description ??
-        (channels.length > 0 ? "Select a channel to start chatting" : "Create your first channel")
-      }
-      back={activeChannel ? { label: "Chat", href: "/chat" } : undefined}
-      primaryAction={
-        <Button
-          size="sm"
-          onClick={() => setShowNewChannel(true)}
-          data-testid="button-new-channel"
-        >
-          <Plus className="h-4 w-4 mr-1" /> New channel
-        </Button>
-      }
-    >
-    <div className="flex h-full min-h-[70vh] overflow-hidden bg-background rounded-xl border">
+    <div className={cn("flex h-full overflow-hidden bg-background", isCompact ? "" : "min-h-[70vh] rounded-xl border")}>
       {/* ── Channel list sidebar ────────────────────────────────────────── */}
-      <aside className="w-60 flex-shrink-0 border-r bg-muted/20 flex flex-col">
-        <ScrollArea className="flex-1 py-2">
-          <div className="px-3 mb-1 mt-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Channels
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowNewChannel(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-
-          {channels.map((channel) => (
-            <button
-              key={channel.id}
-              onClick={() => setActiveChannelId(channel.id)}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-1.5 rounded-md mx-1 text-sm transition-colors text-left",
-                activeChannelId === channel.id
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <Hash className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="truncate">{channel.name}</span>
-            </button>
-          ))}
-
-          {channels.length === 0 && (
-            <p className="text-xs text-muted-foreground px-4 py-2">No channels yet</p>
-          )}
-        </ScrollArea>
-      </aside>
-
-      {/* ── Main area ───────────────────────────────────────────────────── */}
-      {activeChannel ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Channel header */}
-          <div className="flex items-center gap-3 px-6 py-3 border-b bg-background/80 backdrop-blur-sm">
-            <Hash className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <h3 className="font-semibold">{activeChannel.name}</h3>
-              {activeChannel.description && (
-                <p className="text-xs text-muted-foreground leading-tight">{activeChannel.description}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Messages list */}
-          <ScrollArea className="flex-1 px-6 py-4">
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <Hash className="h-8 w-8 text-primary" />
-                </div>
-                <h4 className="font-semibold text-lg mb-1">Welcome to #{activeChannel.name}!</h4>
-                <p className="text-muted-foreground text-sm max-w-sm">
-                  {activeChannel.description ||
-                    "This is the beginning of this channel. Send a message to get started."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-0.5 pb-2">
-                {messageGroups.map(({ msgs, key }) => {
-                  const first = msgs[0];
-                  const sender = first.sender;
-                  return (
-                    <div
-                      key={key}
-                      className="flex gap-3 group py-1 hover:bg-muted/40 rounded-lg px-2 -mx-2 transition-colors"
-                    >
-                      <div className="flex-shrink-0 pt-0.5">
-                        <Avatar className="h-8 w-8">
-                          {sender?.avatarUrl && <AvatarImage src={sender.avatarUrl} />}
-                          <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
-                            {sender ? getInitials(sender.name) : "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="font-semibold text-sm">{sender?.name ?? "Unknown"}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTime(first.createdAt)}
-                          </span>
-                        </div>
-                        {msgs.map((msg) => (
-                          <p key={msg.id} className="text-sm leading-relaxed break-words text-foreground/90">
-                            {msg.content}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={bottomRef} />
-              </div>
-            )}
-          </ScrollArea>
-
-          {/* Message input */}
-          <div className="px-6 pb-5 pt-2 border-t bg-background">
-            <div className="flex items-center gap-2 border rounded-xl bg-muted/30 px-4 py-2.5 focus-within:ring-2 focus-within:ring-primary/30 transition-all">
-              <Input
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={`Message #${activeChannel.name}`}
-                className="border-0 shadow-none p-0 h-auto focus-visible:ring-0 bg-transparent"
-              />
+      {sidebarVisible && (
+        <aside className={cn("flex-shrink-0 border-r bg-muted/20 flex flex-col transition-all", isCompact ? "w-full" : "w-60")}>
+          <ScrollArea className="flex-1 py-2">
+            <div className="px-3 mb-1 mt-2 flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Channels
+              </span>
               <Button
+                variant="ghost"
                 size="icon"
-                className="h-8 w-8 flex-shrink-0 rounded-lg"
-                onClick={handleSend}
-                disabled={!draft.trim() || sendMutation.isPending}
+                className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowNewChannel(true)}
               >
-                <Send className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-1.5 px-1">
-              Press{" "}
-              <kbd className="px-1 py-0.5 rounded border text-xs font-mono bg-muted">Enter</kbd> to send
-            </p>
+
+            {channels.map((channel) => (
+              <button
+                key={channel.id}
+                onClick={() => selectChannel(channel.id)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-1.5 rounded-md mx-1 text-sm transition-colors text-left",
+                  activeChannelId === channel.id && !isCompact
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Hash className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">{channel.name}</span>
+              </button>
+            ))}
+
+            {channels.length === 0 && (
+              <p className="text-xs text-muted-foreground px-4 py-2">No channels yet</p>
+            )}
+          </ScrollArea>
+        </aside>
+      )}
+
+      {/* ── Main area ───────────────────────────────────────────────────── */}
+      {mainVisible && (
+        activeChannel ? (
+          <div className="flex-1 flex flex-col overflow-hidden relative">
+            {/* Channel header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b bg-background/80 backdrop-blur-sm shadow-sm z-10">
+              {isCompact && (
+                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2" onClick={() => setShowMobileList(true)}>
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+              )}
+              <div className="flex items-center gap-2">
+                <Hash className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <h3 className="font-semibold">{activeChannel.name}</h3>
+                  {activeChannel.description && !isCompact && (
+                    <p className="text-xs text-muted-foreground leading-tight">{activeChannel.description}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Messages list */}
+            <ScrollArea className="flex-1 px-4 py-4">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                    <Hash className="h-8 w-8 text-primary" />
+                  </div>
+                  <h4 className="font-semibold text-lg mb-1">Welcome to #{activeChannel.name}!</h4>
+                  <p className="text-muted-foreground text-sm max-w-sm">
+                    {activeChannel.description ||
+                      "This is the beginning of this channel. Send a message to get started."}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-0.5 pb-2">
+                  {messageGroups.map(({ msgs, key }) => {
+                    const first = msgs[0];
+                    const sender = first.sender;
+                    return (
+                      <div
+                        key={key}
+                        className="flex gap-3 group py-1 hover:bg-muted/40 rounded-lg px-2 -mx-2 transition-colors"
+                      >
+                        <div className="flex-shrink-0 pt-0.5">
+                          <Avatar className="h-8 w-8">
+                            {sender?.avatarUrl && <AvatarImage src={sender.avatarUrl} />}
+                            <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                              {sender ? getInitials(sender.name) : "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2 mb-0.5">
+                            <span className="font-semibold text-sm">{sender?.name ?? "Unknown"}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatTime(first.createdAt)}
+                            </span>
+                          </div>
+                          {msgs.map((msg) => {
+                            if (msg.content.startsWith("[STICKER:") && msg.content.endsWith("]")) {
+                              const url = msg.content.slice(9, -1);
+                              return (
+                                <div key={msg.id} className="mt-1">
+                                  <img src={url} alt="Sticker" className="max-w-[120px] rounded-lg shadow-sm" />
+                                </div>
+                              );
+                            }
+                            return (
+                              <p key={msg.id} className="text-sm leading-relaxed break-words text-foreground/90 whitespace-pre-wrap">
+                                <MentionRenderer content={msg.content} />
+                              </p>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={bottomRef} />
+                </div>
+              )}
+            </ScrollArea>
+
+            {/* Message input */}
+            <div className="px-4 pb-4 pt-2 bg-background border-t">
+              <div className="flex items-center gap-2 border rounded-xl bg-muted/30 px-3 py-2 focus-within:ring-2 focus-within:ring-primary/30 transition-all">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground shrink-0 hover:text-foreground">
+                      <SmilePlus className="h-5 w-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-auto p-0 border-none shadow-none">
+                    <EmojiPicker theme={Theme.DARK} onEmojiClick={onEmojiClick} />
+                  </PopoverContent>
+                </Popover>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground shrink-0 hover:text-foreground">
+                      <ImageIcon className="h-5 w-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-64 p-3 bg-popover/90 backdrop-blur-md border-border/50">
+                    <p className="text-xs font-semibold text-muted-foreground mb-3 px-1 uppercase tracking-wider">Stickers</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {PRESET_STICKERS.map((url) => (
+                        <button
+                          key={url}
+                          onClick={() => handleSendSticker(url)}
+                          className="aspect-square rounded-md overflow-hidden hover:scale-105 active:scale-95 transition-transform"
+                        >
+                          <img src={url} alt="Sticker" className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <SmartTextarea
+                  value={draft}
+                  onChange={setDraft}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Message #${activeChannel?.name || 'channel'}`}
+                  className="flex-1 min-h-[36px]"
+                />
+                <Button
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0 rounded-lg shrink-0"
+                  onClick={handleSend}
+                  disabled={!draft.trim() || sendMutation.isPending}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <div className="text-center">
-            <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Select a channel to start chatting</p>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">Select a channel to start chatting</p>
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* ── New Channel Dialog ───────────────────────────────────────────── */}
@@ -413,6 +460,39 @@ export default function Chat() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const { data: channels = [] } = useQuery<Channel[]>({ queryKey: ["/api/chat/channels"] });
+  const activeChannel = channels.find((c) => c.id === activeChannelId);
+
+  // Deep link
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#new") return;
+    // Handled in interface now roughly, but we can ignore for now
+  }, []);
+
+  const chatCrumbs = [
+    { label: "Communication" },
+    { label: "Chat", href: "/chat" },
+    ...(activeChannel ? [{ label: `#${activeChannel.name}` }] : []),
+  ];
+
+  return (
+    <PageShell
+      fullBleed
+      breadcrumbs={chatCrumbs}
+      title={activeChannel ? `#${activeChannel.name}` : "Chat"}
+      description={
+        activeChannel?.description ??
+        (channels.length > 0 ? "Select a channel to start chatting" : "Create your first channel")
+      }
+      back={activeChannel ? { label: "Chat", href: "/chat" } : undefined}
+    >
+      <ChatInterface />
     </PageShell>
   );
 }

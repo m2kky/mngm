@@ -46,7 +46,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   };
 
   return (
-    <nav className="sticky top-0 z-40 h-14 flex items-center px-4 gap-3 bg-background/95 backdrop-blur-md border-b border-border">
+    <nav className="sticky top-0 z-40 h-14 flex items-center px-4 gap-3 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-b border-white/20 dark:border-white/10 shadow-sm">
       <div className="flex items-center gap-2 min-w-0">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -130,15 +130,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           <TooltipContent side="bottom">Toggle theme</TooltipContent>
         </Tooltip>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleLanguageToggle}
-          className="p-2 text-sm font-medium"
-          aria-label="Switch language"
-        >
-          {language === "en" ? "عر" : "EN"}
-        </Button>
+
 
         <Tooltip>
           <TooltipTrigger asChild>

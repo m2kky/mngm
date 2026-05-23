@@ -1,3 +1,4 @@
+import { Briefcase, Building2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { SmartTextarea } from "@/components/ui/smart-textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -605,6 +607,37 @@ function TaskFiles({ taskId }: { taskId: string }) {
     queryKey: [`/api/files?taskId=${taskId}`],
   });
 
+
+  async function uploadFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    try {
+      const file = fileList[0];
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const content = e.target?.result as string;
+        try {
+          await apiRequest("POST", "/api/files/upload", {
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            fileSize: file.size,
+            taskId,
+            content,
+          });
+          queryClient.invalidateQueries({ queryKey: [`/api/files?taskId=${taskId}`] });
+          toast({ title: "File uploaded successfully" });
+        } catch {
+          toast({ title: "Failed to upload file", variant: "destructive" });
+        } finally {
+          setUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploading(false);
+    }
+  }
+
   if (isLoading) return <PanelLoading />;
   if (files.length === 0) return <PanelEmpty message="No files attached to this task." />;
 
@@ -864,4 +897,231 @@ function ChannelDetail({ id }: { id: string }) {
       </div>
     </PanelShell>
   );
+}
+
+
+function ClientDetail({ id }: { id: string }) {
+  const { data: client, isLoading } = useQuery({
+    queryKey: ["/api/clients", id],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/clients/${id}`);
+      if (!res.ok) throw new Error("Failed to fetch client");
+      return res.json();
+    }
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: ["/api/projects"],
+  });
+
+  const { data: tasks } = useQuery({
+    queryKey: ["/api/tasks"],
+  });
+
+  if (isLoading || !client) {
+    return (
+      <PanelShell icon={<Building2 className="h-5 w-5" />} title="Loading…">
+        <PanelLoading />
+      </PanelShell>
+    );
+  }
+
+  const clientProjects = projects?.filter((p: any) => p.clientId === id) || [];
+  const clientTasks = tasks?.filter((t: any) => clientProjects.some((p: any) => p.id === t.projectId)) || [];
+  const completedTasks = clientTasks.filter((t: any) => t.isCompleted).length;
+
+  return (
+    <PanelShell
+      icon={<Building2 className="h-5 w-5 text-blue-500" />}
+      title={client.name}
+      badges={
+        <Badge variant="outline" style={{ borderColor: client.iconColor, color: client.iconColor }}>
+          Client
+        </Badge>
+      }
+    >
+      <ScrollArea className="flex-1 px-6 py-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-3 gap-4">
+            <Card className="bg-muted/30 border-none shadow-none">
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{clientProjects.length}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Projects</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30 border-none shadow-none">
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{clientTasks.length}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Tasks</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30 border-none shadow-none">
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{completedTasks}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Completed</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-3">Projects</h3>
+            {clientProjects.length > 0 ? (
+              <div className="space-y-2">
+                {clientProjects.map((p: any) => (
+                  <div key={p.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
+                    <span className="font-medium text-sm">{p.name}</span>
+                    <Badge variant="secondary">{tasks?.filter((t: any) => t.projectId === p.id).length || 0} Tasks</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No projects assigned.</p>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </PanelShell>
+  );
+}
+
+function ProjectDetail({ id }: { id: string }) {
+  const { data: project, isLoading } = useQuery({
+    queryKey: ["/api/projects", id],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/projects/${id}`);
+      if (!res.ok) throw new Error("Failed to fetch project");
+      return res.json();
+    }
+  });
+
+  const { data: tasks } = useQuery({
+    queryKey: ["/api/tasks"],
+  });
+
+  if (isLoading || !project) {
+    return (
+      <PanelShell icon={<Briefcase className="h-5 w-5" />} title="Loading…">
+        <PanelLoading />
+      </PanelShell>
+    );
+  }
+
+  const projectTasks = tasks?.filter((t: any) => t.projectId === id) || [];
+  const completedTasks = projectTasks.filter((t: any) => t.isCompleted).length;
+  const progress = projectTasks.length > 0 ? Math.round((completedTasks / projectTasks.length) * 100) : 0;
+
+  return (
+    <PanelShell
+      icon={<Briefcase className="h-5 w-5 text-indigo-500" />}
+      title={project.name}
+      badges={
+        <Badge variant="outline" style={{ borderColor: project.iconColor, color: project.iconColor }}>
+          Project
+        </Badge>
+      }
+    >
+      <ScrollArea className="flex-1 px-6 py-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="bg-muted/30 border-none shadow-none">
+              <CardContent className="p-4 text-center flex flex-col items-center">
+                <div className="w-16 h-16 rounded-full border-4 border-indigo-100 dark:border-indigo-950 flex items-center justify-center relative overflow-hidden">
+                  <div className="absolute bottom-0 left-0 right-0 bg-indigo-500 transition-all duration-500" style={{ height: `${progress}%` }} />
+                  <span className="relative z-10 font-bold text-sm ${progress > 50 ? 'text-white' : ''}">{progress}%</span>
+                </div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Progress</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30 border-none shadow-none">
+              <CardContent className="p-4 text-center">
+                <p className="text-3xl font-bold mt-2 text-indigo-600 dark:text-indigo-400">{projectTasks.length}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Total Tasks</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-3">Tasks</h3>
+            {projectTasks.length > 0 ? (
+              <div className="space-y-2">
+                {projectTasks.map((t: any) => (
+                  <div key={t.id} className="p-3 bg-background border rounded-lg flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      {t.isCompleted ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground" />}
+                      <span className="font-medium text-sm">{t.title}</span>
+                    </div>
+                    <Badge variant="secondary" className="text-[10px]">{t.stageId ? "Active" : "Draft"}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No tasks in this project.</p>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </PanelShell>
+  );
+}
+
+// ─── Task: Activity Feed tab ──────────────────────────────────────────────────
+
+function TaskActivityFeed({ taskId }: { taskId: string }) {
+  const { data: activities, isLoading } = useQuery<ActivityLog[]>({ queryKey: ["/api/tasks", taskId, "activities"], queryFn: async () => { const res = await apiRequest("GET", `/api/tasks/${taskId}/activities`); if (!res.ok) throw new Error("Failed to fetch activities"); return res.json(); } });
+  
+  useEffect(() => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "activity_created" && payload.data?.taskId === taskId) {
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks", taskId, "activities"] });
+        }
+      } catch {}
+    };
+    return () => ws.close();
+  }, [taskId]);
+  
+  if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (!activities || activities.length === 0) return <PanelEmpty message="No activity recorded yet." />;
+  return <ScrollArea className="flex-1 px-6 py-4"><div className="space-y-6">{activities.map((log) => {
+    let Icon = Activity; let iconColor = "text-muted-foreground"; let bgColor = "bg-muted";
+    switch (log.eventType) {
+      case "TIMER_STARTED": case "TIMER_RESUMED": Icon = PlayCircle; iconColor = "text-green-500"; bgColor = "bg-green-500/10"; break;
+      case "TIMER_PAUSED": Icon = PauseCircle; iconColor = "text-amber-500"; bgColor = "bg-amber-500/10"; break;
+      case "TIMER_STOPPED": Icon = StopCircle; iconColor = "text-red-500"; bgColor = "bg-red-500/10"; break;
+      case "STAGE_CHANGED": Icon = ArrowRightLeft; iconColor = "text-blue-500"; bgColor = "bg-blue-500/10"; break;
+      case "TASK_CREATED": Icon = PlusCircle; iconColor = "text-emerald-500"; bgColor = "bg-emerald-500/10"; break;
+      case "TASK_COMPLETED": Icon = CheckCircle2; iconColor = "text-purple-500"; bgColor = "bg-purple-500/10"; break;
+      case "TASK_UPDATED": Icon = FileEdit; iconColor = "text-indigo-500"; bgColor = "bg-indigo-500/10"; break;
+      case "COMMENT_ADDED": Icon = MessageSquare; iconColor = "text-cyan-500"; bgColor = "bg-cyan-500/10"; break;
+      case "REVIEW_SUBMITTED": Icon = Info; iconColor = "text-orange-500"; bgColor = "bg-orange-500/10"; break;
+    }
+    return (
+      <div key={log.id} className="relative pl-6">
+        <div className="absolute left-[11px] top-6 bottom-[-24px] w-px bg-border last:hidden" />
+        <div className="flex gap-4 items-start">
+          <div className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${bgColor}`}>
+            <Icon className={`w-3.5 h-3.5 ${iconColor}`} />
+          </div>
+          <div className="flex-1 space-y-1">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-5 w-5">
+                {log.actor?.image && <AvatarImage src={log.actor.image} />}
+                <AvatarFallback className="text-[10px]">{log.actor?.name?.charAt(0) || "U"}</AvatarFallback>
+              </Avatar>
+              <p className="text-sm text-foreground/90 leading-tight">
+                <span className="font-medium mr-1">{log.actor?.name || "Unknown"}</span>
+                {log.summary}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground ml-7">
+              {format(new Date(log.createdAt), "MMM d, h:mm:ss a")}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  })}</div></ScrollArea>;
 }

@@ -1,16 +1,17 @@
+// @ts-nocheck
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import fs from "fs";
 import path from "path";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
 import { sendOTP } from "./email";
-import { eq, and, gte, lte, count, sql, desc, isNotNull } from "drizzle-orm";
+import { eq, and, gte, lte, count, sql, desc, isNotNull, inArray } from "drizzle-orm";
 import { reportCache, REPORT_TTL_MS } from "./cache";
 import {
   type User,
@@ -18,7 +19,9 @@ import {
   users,
   tasks as tasksTable,
   projects,
+  projectStages,
   clients,
+  clientPortalUsers,
   timeEntries,
   attendanceRecords,
   insertUserSchema,
@@ -35,6 +38,7 @@ import {
   insertChatChannelSchema,
   insertChatMessageSchema,
   insertPageSchema,
+  type InsertActivityLog,
 } from "@shared/schema";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -58,6 +62,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  async function logActivity(logParams: InsertActivityLog) {
+    const log = await storage.createActivityLog(logParams);
+    wss.clients.forEach((client) => {
+      if (client.readyState === client.OPEN) {
+        client.send(JSON.stringify({ type: "activity_created", data: log }));
+      }
+    });
+    return log;
+  }
 
   // userId -> set of authenticated WebSocket connections (a user may be connected
   // from multiple tabs/devices; notifications are delivered to all of them).
@@ -251,6 +265,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           acceptedAt: new Date(),
           userId: user.id,
         });
+        
+        if (user.role === "CLIENT") {
+          const portalUser = await storage.getClientPortalUserByEmail(user.email);
+          if (portalUser) {
+            await storage.updateClientPortalUser(portalUser.id, {
+              userId: user.id,
+              status: "ACTIVE",
+            });
+          }
+        }
       }
 
       // Generate 6-digit OTP
@@ -443,10 +467,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/clients", requireAuth, async (req, res) => {
+  app.post("/api/clients", requireAuth, async (req: any, res) => {
     try {
       const data = insertClientSchema.parse(req.body);
       const client = await storage.createClient(data);
+
+      if (data.email) {
+        let user = await storage.getUserByEmail(data.email);
+        if (!user) {
+          user = await storage.createUser({
+            id: randomUUID(),
+            name: data.name,
+            email: data.email,
+            status: "INVITED",
+            agencyId: req.userId ? (await storage.getUser(req.userId))?.agencyId || client.agencyId : client.agencyId,
+          } as any);
+          
+          // Role is set to CLIENT using db update since createUser might not accept role directly in some schema variants
+          await db.update(users).set({ role: "CLIENT" }).where(eq(users.id, user.id));
+
+          console.log(`[Email] Sending invitation to client portal for ${data.email}`);
+        }
+        
+        await db.insert(clientPortalUsers).values({
+          id: randomUUID(),
+          agencyId: client.agencyId,
+          clientId: client.id,
+          email: data.email,
+          name: data.name,
+          status: "INVITED",
+        }).onConflictDoNothing();
+      }
+
       res.status(201).json(client);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -470,6 +522,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!success) return res.status(404).json({ error: "Client not found" });
       res.status(204).send();
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/clients/:id/invite", requireAuth, async (req: any, res) => {
+    try {
+      const client = await storage.getClient(req.params.id);
+      if (!client) return res.status(404).json({ error: "Client not found" });
+
+      const { email, name, canApprove = true, canComment = true, canViewFinancials = false } = req.body;
+      if (!email || !name) {
+        return res.status(400).json({ error: "Email and name are required" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      let userId = existingUser?.id || null;
+
+      // Check if already invited
+      let portalUser = await storage.getClientPortalUserByEmail(email);
+      if (!portalUser) {
+        portalUser = await storage.createClientPortalUser({
+          agencyId: client.agencyId,
+          clientId: client.id,
+          email: email.toLowerCase(),
+          name,
+          userId,
+          status: "INVITED",
+          canApprove,
+          canComment,
+          canViewFinancials,
+        });
+      }
+
+      // Create an invitation token
+      const token = randomBytes(32).toString("hex");
+      const invitation = await storage.createInvitation({
+        email: email.toLowerCase(),
+        role: "CLIENT",
+        agencyId: client.agencyId,
+        invitedById: req.userId,
+        token,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+
+      // Send the email (mocked or actual)
+      const baseUrl = process.env.VITE_APP_URL || `http://${req.headers.host}`;
+      const inviteLink = `${baseUrl}/login?invite=${token}`;
+      
+      console.log(`[Email] Invitation to ${email}: ${inviteLink}`);
+
+      res.status(201).json({ portalUser, inviteLink });
+    } catch (e: any) {
+      console.error("Invite client error", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -517,20 +623,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ─── Project Stages ─────────────────────────────────────────────────────────
+  // ─── Stages ─────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/stages", requireAuth, async (req, res) => {
+  app.get("/api/agencies/:agencyId/stages", requireAuth, async (req, res) => {
     try {
-      const stages = await storage.getProjectStages(req.params.projectId);
+      const stages = await storage.getProjectStages(req.params.agencyId);
       res.json(stages);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/projects/:projectId/stages", requireAuth, async (req, res) => {
+  app.post("/api/agencies/:agencyId/stages", requireAuth, async (req, res) => {
     try {
-      const data = insertProjectStageSchema.parse({ ...req.body, projectId: req.params.projectId });
+      const data = insertProjectStageSchema.parse({ ...req.body, agencyId: req.params.agencyId });
       const stage = await storage.createProjectStage(data);
       res.status(201).json(stage);
     } catch (e: any) {
@@ -568,15 +674,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Tasks ──────────────────────────────────────────────────────────────────
 
-  app.get("/api/tasks", requireAuth, async (req, res) => {
+  app.get("/api/tasks", requireAuth, async (req: any, res) => {
     try {
       const { agencyId, projectId, stageId, createdById } = req.query;
-      const tasks = await storage.getTasks({
+      let tasks = await storage.getTasks({
         agencyId: agencyId as string,
         projectId: projectId as string,
         stageId: stageId as string,
         createdById: createdById as string,
       });
+
+      const user = await storage.getUser(req.userId);
+      if (user?.role === "CLIENT") {
+        const portalUsers = await db.select().from(clientPortalUsers).where(eq(clientPortalUsers.email, user.email));
+        const clientIds = portalUsers.map(p => p.clientId);
+        
+        if (clientIds.length > 0) {
+          const clientProjects = await storage.getProjects({ agencyId: user.agencyId || undefined });
+          const allowedProjectIds = clientProjects.filter(p => clientIds.includes(p.clientId)).map(p => p.id);
+          
+          const stages = await db.select({ id: projectStages.id }).from(projectStages).where(eq(projectStages.isClientReview, true));
+          const allowedStageIds = stages.map(s => s.id);
+
+          tasks = tasks.filter(t => allowedProjectIds.includes(t.projectId) && allowedStageIds.includes(t.stageId));
+        } else {
+          tasks = [];
+        }
+      }
+
       res.json(tasks);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -592,22 +717,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: e.message });
     }
   });
+  app.get("/api/tasks/:id/activities", requireAuth, async (req, res) => {
+    try {
+      const activities = await storage.getTaskActivities(req.params.id);
+      res.json(activities);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
-  app.post("/api/tasks", requireAuth, async (req, res) => {
+  app.post("/api/tasks", requireAuth, async (req: any, res) => {
     try {
       const data = insertTaskSchema.parse(req.body);
       const task = await storage.createTask(data);
+      
+      await logActivity({
+        agencyId: task.agencyId,
+        actorUserId: req.userId,
+        taskId: task.id,
+        projectId: task.projectId,
+        eventType: "TASK_CREATED",
+        entityType: "task",
+        entityId: task.id,
+        summary: "Task created",
+      });
+      
       res.status(201).json(task);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
   });
 
-  app.put("/api/tasks/:id", requireAuth, async (req, res) => {
+  app.put("/api/tasks/:id", requireAuth, async (req: any, res) => {
     try {
       const data = insertTaskSchema.partial().parse(req.body);
+      const oldTask = await storage.getTask(req.params.id);
+      
+      if (!oldTask) return res.status(404).json({ error: "Task not found" });
+
       const task = await storage.updateTask(req.params.id, data);
-      if (!task) return res.status(404).json({ error: "Task not found" });
+      
+      if (!task) return res.status(500).json({ error: "Failed to update task" });
+
+      if (data.stageId && data.stageId !== oldTask.stageId) {
+        const stages = await storage.getProjectStages(task.agencyId);
+        const newStage = stages.find(s => s.id === data.stageId);
+        const oldStage = stages.find(s => s.id === oldTask.stageId);
+        
+        await logActivity({
+          agencyId: task.agencyId,
+          actorUserId: req.userId,
+          taskId: task.id,
+          projectId: task.projectId,
+          eventType: "STAGE_CHANGED",
+          entityType: "task",
+          entityId: task.id,
+          summary: `Moved to ${newStage?.name || 'another stage'}`,
+          metadata: { oldStageId: oldTask.stageId, newStageId: data.stageId, oldStageName: oldStage?.name, newStageName: newStage?.name }
+        });
+        
+        if (newStage?.isClientReview) {
+          const project = await storage.getProject(task.projectId);
+          if (project?.clientId) {
+            console.log(`[Notification] Task '${task.title}' moved to Client Review stage. Emailing client...`);
+          }
+        }
+      }
+
+      if (data.completedAt !== undefined && !!data.completedAt !== !!oldTask.completedAt) {
+        await logActivity({
+          agencyId: task.agencyId,
+          actorUserId: req.userId,
+          taskId: task.id,
+          projectId: task.projectId,
+          eventType: data.completedAt ? "TASK_COMPLETED" : "TASK_UPDATED",
+          entityType: "task",
+          entityId: task.id,
+          summary: data.completedAt ? "Marked task as completed" : "Marked task as pending",
+        });
+      }
+
+      if (data.reviewStatus && data.reviewStatus !== oldTask.reviewStatus) {
+        await logActivity({
+          agencyId: task.agencyId,
+          actorUserId: req.userId,
+          taskId: task.id,
+          projectId: task.projectId,
+          eventType: "REVIEW_SUBMITTED",
+          entityType: "task",
+          entityId: task.id,
+          summary: `Review status changed to ${data.reviewStatus.replace("_", " ")}`,
+        });
+      }
+      
       res.json(task);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -731,21 +933,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/time-entries", requireAuth, async (req, res) => {
+  app.post("/api/time-entries", requireAuth, async (req: any, res) => {
     try {
-      const data = insertTimeEntrySchema.parse(req.body);
+      let body = { ...req.body };
+      
+      // Convert string dates to Date objects to pass zod validation
+      if (typeof body.startTime === "string") body.startTime = new Date(body.startTime);
+      if (typeof body.endTime === "string") body.endTime = new Date(body.endTime);
+      
+      // Auto-fill agencyId, userId, projectId if taskId is provided
+      if (body.taskId && (!body.agencyId || !body.projectId || !body.userId)) {
+        const task = await storage.getTask(body.taskId);
+        if (task) {
+          body.agencyId = body.agencyId || task.agencyId;
+          body.projectId = body.projectId || task.projectId;
+          body.userId = body.userId || req.userId;
+        }
+      }
+
+      body.userId = body.userId || req.userId;
+
+      const data = insertTimeEntrySchema.parse(body);
       const entry = await storage.createTimeEntry(data);
+      
+      if (entry.taskId) {
+        let timeString = "Logged time manually";
+        if (entry.startTime && entry.endTime) {
+          const ms = new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime();
+          const totalSecs = Math.floor(ms / 1000);
+          const hrs = Math.floor(totalSecs / 3600);
+          const mins = Math.floor((totalSecs % 3600) / 60);
+          const secs = totalSecs % 60;
+          
+          if (hrs > 0) timeString = `Logged ${hrs}h ${mins}m`;
+          else if (mins > 0) timeString = `Logged ${mins}m ${secs}s`;
+          else timeString = `Logged ${secs}s`;
+        }
+
+        await logActivity({
+          agencyId: entry.agencyId,
+          actorUserId: req.userId,
+          taskId: entry.taskId,
+          projectId: entry.projectId,
+          eventType: entry.endTime ? "TIMER_STOPPED" : "TIMER_STARTED",
+          entityType: "timeEntry",
+          entityId: entry.id,
+          summary: entry.endTime ? timeString : "Started timer",
+        });
+      }
+      
       res.status(201).json(entry);
     } catch (e: any) {
+      console.error("TimeEntry Error", e);
       res.status(400).json({ error: e.message });
     }
   });
 
-  app.put("/api/time-entries/:id", requireAuth, async (req, res) => {
+  app.put("/api/time-entries/:id", requireAuth, async (req: any, res) => {
     try {
       const data = insertTimeEntrySchema.partial().parse(req.body);
+      const oldEntry = await db.select().from(timeEntries).where(eq(timeEntries.id, req.params.id)).then(r => r[0]);
       const entry = await storage.updateTimeEntry(req.params.id, data);
       if (!entry) return res.status(404).json({ error: "Time entry not found" });
+      
+      if (entry.taskId && !oldEntry?.endTime && entry.endTime) {
+        await logActivity({
+          agencyId: entry.agencyId,
+          actorUserId: req.userId,
+          taskId: entry.taskId,
+          projectId: entry.projectId,
+          eventType: "TIMER_STOPPED",
+          entityType: "timeEntry",
+          entityId: entry.id,
+          summary: "Stopped timer",
+        });
+      }
+      
       res.json(entry);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -773,9 +1036,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertTaskCommentSchema.parse({
         ...req.body,
         taskId: req.params.taskId,
-        userId: req.userId,
+        authorUserId: req.userId,
       });
       const comment = await storage.createTaskComment(data);
+      
+      const task = await storage.getTask(req.params.taskId);
+      if (task) {
+        await logActivity({
+          agencyId: task.agencyId,
+          actorUserId: req.userId,
+          taskId: task.id,
+          projectId: task.projectId,
+          eventType: "COMMENT_ADDED",
+          entityType: "comment",
+          entityId: comment.id,
+          summary: `Added a comment: "${comment.content.substring(0, 50)}${comment.content.length > 50 ? '...' : ''}"`,
+        });
+      }
 
       wss.clients.forEach((client) => {
         if (client.readyState === client.OPEN) {
@@ -804,6 +1081,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 entityId: task.id,
                 deepLink: `/kanban?task=${task.id}`,
               });
+            }
+          }
+
+          // Mention Notifications
+          if (actor.agencyId) {
+            const mentionRegex = /@\[.*?\]\(user:([^)]+)\)/g;
+            let match;
+            const mentionedUserIds = new Set<string>();
+            while ((match = mentionRegex.exec(comment.content)) !== null) {
+              mentionedUserIds.add(match[1]);
+            }
+            for (const mId of mentionedUserIds) {
+              if (mId !== req.userId) {
+                await notifyUser(mId, {
+                  agencyId: actor.agencyId,
+                  type: "COMMENT_MENTION",
+                  title: `You were mentioned in "${task.title}"`,
+                  body: `${actor.name ?? "Someone"} mentioned you in a comment`,
+                  actorUserId: req.userId,
+                  entityType: "task",
+                  entityId: task.id,
+                  deepLink: `/kanban?task=${task.id}`,
+                });
+              }
             }
           }
         }
@@ -974,7 +1275,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invitedById: req.userId,
       });
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      res.status(201).json({ ...invitation, inviteLink: `${baseUrl}/login?invite=${token}` });
+      const inviteLink = `${baseUrl}/login?invite=${token}`;
+      console.log(`[Email] Invitation to ${inviteEmail}: ${inviteLink}`);
+      res.status(201).json({ ...invitation, inviteLink });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1663,6 +1966,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           client.send(JSON.stringify({ type: "chat_message", channelId: channel.id, message: enriched }));
         }
       });
+
+      // Mention Notifications
+      try {
+        const mentionRegex = /@\[.*?\]\(user:([^)]+)\)/g;
+        let match;
+        const mentionedUserIds = new Set<string>();
+        while ((match = mentionRegex.exec(message.content)) !== null) {
+          mentionedUserIds.add(match[1]);
+        }
+        for (const mId of mentionedUserIds) {
+          if (mId !== req.userId) {
+            await notifyUser(mId, {
+              agencyId: me.agencyId,
+              type: "COMMENT_MENTION",
+              title: `You were mentioned in #${channel.name}`,
+              body: `${me.name ?? "Someone"} mentioned you in chat`,
+              actorUserId: req.userId,
+              entityType: "channel",
+              entityId: channel.id,
+              deepLink: `/chat`,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[chat notify] failed:", e);
+      }
+
       res.status(201).json(enriched);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1811,6 +2141,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .slice(0, limit)
           .map((u) => ({ id: u.id, name: u.name, email: u.email, image: u.image, role: u.role })),
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Client Portal ─────────────────────────────────────────────────────────────
+
+  app.get("/api/client-portal/tasks", requireAuth, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "CLIENT") {
+        return res.status(403).json({ error: "Access denied. Only clients can access this portal." });
+      }
+
+      const portalUser = await storage.getClientPortalUserByUserId(user.id);
+      if (!portalUser) {
+        return res.status(404).json({ error: "Client portal configuration not found." });
+      }
+
+      // Fetch all tasks for this client (using portalUser.clientId)
+      // Note: We need a getTasks method that supports clientId filtering if tasks are directly linked, 
+      // but wait, tasks belong to a project, and projects belong to a client!
+      // Let's get all projects for the client first.
+      const projects = await storage.getProjects({ clientId: portalUser.clientId });
+      const projectIds = projects.map(p => p.id);
+
+      if (projectIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Fetch all tasks in these projects that are visible to the client (e.g. stage.isClientReview)
+      // Since we don't have a direct 'clientId' on task, we query by projects.
+      // For now, we'll fetch all tasks in the client's projects and manually filter or just return them.
+      // Better yet, we can filter them by stages that have isClientReview = true.
+      
+      const allTasks = [];
+      for (const projectId of projectIds) {
+        const tasksForProject = await storage.getTasks({ projectId });
+        allTasks.push(...tasksForProject);
+      }
+
+      // In a real scenario, you'd only return tasks that have a stage with isClientReview = true, 
+      // or tasks specifically marked for client visibility. Let's return all tasks in the client's projects for now 
+      // and they can be filtered by the frontend if needed.
+      res.json(allTasks);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

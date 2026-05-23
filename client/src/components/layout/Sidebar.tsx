@@ -223,7 +223,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-64 p-4 bg-background border-r border-border">
+        <SheetContent side="left" className="w-64 p-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-r border-white/20 dark:border-white/10 shadow-lg">
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
           </SheetHeader>
@@ -241,7 +241,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "hidden md:flex flex-col shrink-0 border-r border-border bg-background transition-all duration-250 overflow-hidden",
+        "hidden md:flex flex-col shrink-0 border-r border-white/20 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl transition-all duration-250 overflow-hidden",
         isCollapsed ? "w-[3.25rem]" : "w-56",
       )}
     >
