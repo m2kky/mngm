@@ -6,33 +6,26 @@ interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
   hover?: boolean;
 }
 
-export function GlassCard({ 
-  children, 
-  className, 
-  variant = "default", 
-  hover = true, 
-  ...props 
+export function GlassCard({
+  children,
+  className,
+  variant = "default",
+  hover = true,
+  ...props
 }: GlassCardProps) {
-  const baseClasses = "backdrop-blur-xl border rounded-xl transition-all duration-300";
-  
+  const baseClasses = "border border-border rounded-xl shadow-sm transition-all duration-200";
+
   const variants = {
-    default: "bg-white/10 dark:bg-black/20 border-white/20 dark:border-white/10",
-    dark: "bg-black/20 border-white/10",
-    light: "bg-white/20 border-white/30"
+    default: "bg-card text-card-foreground",
+    dark: "bg-muted text-card-foreground",
+    light: "bg-background text-card-foreground",
   };
 
-  const hoverClasses = hover 
-    ? "hover:bg-white/15 dark:hover:bg-black/25 hover:shadow-lg hover:shadow-white/5 hover:-translate-y-0.5" 
-    : "";
+  const hoverClasses = hover ? "hover:shadow-md" : "";
 
   return (
     <div
-      className={cn(
-        baseClasses,
-        variants[variant],
-        hoverClasses,
-        className
-      )}
+      className={cn(baseClasses, variants[variant], hoverClasses, className)}
       {...props}
     >
       {children}

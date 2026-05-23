@@ -5,19 +5,12 @@ import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { FloatingTimer } from "./FloatingTimer";
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
+  Breadcrumb, BreadcrumbItem, BreadcrumbLink,
+  BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { GlassCard } from "@/components/ui/GlassCard";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSidebarUI } from "@/contexts/SidebarUIContext";
 import { cn } from "@/lib/utils";
@@ -28,16 +21,16 @@ export type Crumb = {
 };
 
 const SECTION_FOR_PATH: Record<string, { section: string; label: string }> = {
-  dashboard: { section: "Workspace", label: "Dashboard" },
-  tasks: { section: "Work", label: "Tasks" },
-  pages: { section: "Work", label: "Pages" },
-  files: { section: "Work", label: "Files" },
-  chat: { section: "Communication", label: "Chat" },
-  attendance: { section: "Insights", label: "Attendance" },
-  reports: { section: "Insights", label: "Reports" },
-  team: { section: "Insights", label: "Team" },
-  settings: { section: "Workspace", label: "Settings" },
-  profile: { section: "Workspace", label: "Profile" },
+  dashboard:  { section: "Workspace",     label: "Dashboard" },
+  tasks:      { section: "Work",          label: "Tasks" },
+  pages:      { section: "Work",          label: "Pages" },
+  files:      { section: "Work",          label: "Files" },
+  chat:       { section: "Communication", label: "Chat" },
+  attendance: { section: "Insights",      label: "Attendance" },
+  reports:    { section: "Insights",      label: "Reports" },
+  team:       { section: "Insights",      label: "Team" },
+  settings:   { section: "Workspace",     label: "Settings" },
+  profile:    { section: "Workspace",     label: "Profile" },
 };
 
 function deriveCrumbsFromPath(path: string): Crumb[] | undefined {
@@ -52,17 +45,12 @@ type PageShellProps = {
   title?: ReactNode;
   description?: ReactNode;
   breadcrumbs?: Crumb[];
-  /** Optional explicit "back to <parent>" link shown above the title. */
   back?: { label: string; href: string };
   primaryAction?: ReactNode;
-  /** Items rendered inside an overflow "More" dropdown menu. */
   overflow?: ReactNode;
-  /** A view/tab strip rendered just under the header card. */
   tabs?: ReactNode;
-  /** Optional secondary actions rendered inline next to the primary action. */
   secondaryActions?: ReactNode;
   children: ReactNode;
-  /** When true, the children render full-bleed (no padding card wrapper) — used by Pages/Chat/Tasks. */
   fullBleed?: boolean;
   contentClassName?: string;
 };
@@ -83,13 +71,10 @@ export function PageShell({
   const { collapsed, setCollapsed, closeMobile } = useSidebarUI();
   const [location] = useLocation();
 
-  // Auto-close mobile sidebar whenever the route changes.
   useEffect(() => {
     closeMobile();
   }, [location, closeMobile]);
 
-  // Derive default breadcrumbs from the route when none provided.
-  // Hierarchical pages (Tasks/Pages/Chat) pass explicit breadcrumbs.
   const effectiveCrumbs: Crumb[] | undefined =
     breadcrumbs ?? deriveCrumbsFromPath(location);
 
@@ -97,21 +82,25 @@ export function PageShell({
     title || description || effectiveCrumbs?.length || primaryAction || secondaryActions || overflow || back;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
+    <div className="min-h-screen bg-muted/30 flex flex-col">
       <Header onToggleSidebar={() => setCollapsed(!collapsed)} />
-      <div className="flex">
+
+      <div className="flex flex-1 min-h-0">
         <Sidebar isCollapsed={collapsed} />
-        <main className="flex-1 min-w-0 p-4 space-y-4">
+
+        <main className="flex-1 min-w-0 p-4 md:p-5 space-y-4 overflow-auto">
           {hasHeader && (
-            <GlassCard className="p-4 sm:p-6">
+            <div className="bg-background border border-border rounded-xl shadow-sm px-5 py-4">
               {back && (
-                <Link href={back.href}>
-                  <a className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground mb-2">
-                    <ChevronLeft className="h-3.5 w-3.5 mr-1" />
-                    Back to {back.label}
-                  </a>
+                <Link
+                  href={back.href}
+                  className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 mr-0.5" />
+                  Back to {back.label}
                 </Link>
               )}
+
               {effectiveCrumbs && effectiveCrumbs.length > 0 && (
                 <Breadcrumb className="mb-2">
                   <BreadcrumbList>
@@ -135,19 +124,20 @@ export function PageShell({
                   </BreadcrumbList>
                 </Breadcrumb>
               )}
+
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="min-w-0">
                   {title && (
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+                    <h1 className="text-[22px] font-semibold text-foreground truncate tracking-tight">
                       {title}
                     </h1>
                   )}
                   {description && (
-                    <p className="text-sm text-muted-foreground mt-1">{description}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
                   )}
                 </div>
                 {(primaryAction || secondaryActions || overflow) && (
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
                     {secondaryActions}
                     {primaryAction}
                     {overflow && (
@@ -163,13 +153,15 @@ export function PageShell({
                   </div>
                 )}
               </div>
-              {tabs && <div className="mt-4">{tabs}</div>}
-            </GlassCard>
+
+              {tabs && <div className="mt-3 -mb-1">{tabs}</div>}
+            </div>
           )}
 
-          <div className={cn(fullBleed ? "" : "", contentClassName)}>{children}</div>
+          <div className={cn(contentClassName)}>{children}</div>
         </main>
       </div>
+
       <FloatingTimer />
     </div>
   );

@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Redirect, useSearch } from "wouter";
 import { Loader2, Mail, Lock, Eye, EyeOff, User } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,7 +58,10 @@ export default function Login() {
         toast({ title: "Welcome back!" });
       } else {
         await signUp(name, email, password, inviteToken ?? undefined);
-        toast({ title: "Account created!", description: inviteToken ? "You've joined the workspace." : "Let's set up your workspace." });
+        toast({
+          title: "Account created!",
+          description: inviteToken ? "You've joined the workspace." : "Let's set up your workspace.",
+        });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Something went wrong";
@@ -70,16 +72,16 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800 p-4">
-      <div className="w-full max-w-md space-y-8">
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 dark:bg-background p-4">
+      <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-xl">W</span>
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-5 shadow-sm">
+            <span className="text-primary-foreground font-bold text-xl">W</span>
           </div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
             Welcome to Workit.OS
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
+          <p className="text-sm text-muted-foreground mt-1.5">
             {inviteToken
               ? "You've been invited to join a workspace"
               : mode === "signin"
@@ -89,31 +91,31 @@ export default function Login() {
         </div>
 
         {inviteToken && inviteError && (
-          <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm text-center">
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center">
             {inviteError}
           </div>
         )}
 
         {inviteToken && inviteInfo && !inviteError && (
-          <div className="p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 text-sm text-center">
+          <div className="p-3 rounded-lg bg-primary/8 border border-primary/20 text-primary text-sm text-center">
             Invited as <strong>{inviteInfo.role.replace("_", " ")}</strong> — create your account below.
           </div>
         )}
 
-        <GlassCard className="p-6 space-y-5">
+        <div className="bg-background border border-border rounded-xl shadow-sm p-6 space-y-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="name">Full Name</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="name"
                     type="text"
                     placeholder="Your name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="pl-10 bg-white/10 border-white/20 focus:bg-white/15"
+                    className="pl-9"
                     required
                     disabled={isLoading}
                   />
@@ -121,38 +123,38 @@ export default function Login() {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
                   placeholder="name@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-white/10 border-white/20 focus:bg-white/15"
+                  className="pl-9"
                   required
                   disabled={isLoading || (!!inviteToken && !!inviteInfo)}
                   autoComplete="email"
                 />
               </div>
               {inviteToken && inviteInfo && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">Email is pre-filled from your invitation and cannot be changed.</p>
+                <p className="text-xs text-muted-foreground">Email is pre-filled from your invitation.</p>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-white/10 border-white/20 focus:bg-white/15"
+                  className="pl-9 pr-10"
                   required
                   disabled={isLoading}
                   autoComplete={mode === "signin" ? "current-password" : "new-password"}
@@ -170,13 +172,13 @@ export default function Login() {
                 </Button>
               </div>
               {mode === "register" && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">Minimum 8 characters</p>
+                <p className="text-xs text-muted-foreground">Minimum 8 characters</p>
               )}
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
+              className="w-full"
               disabled={isLoading || (!!inviteToken && !!inviteError)}
             >
               {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
@@ -185,14 +187,14 @@ export default function Login() {
           </form>
 
           {!inviteToken && (
-            <div className="text-center text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-center text-sm text-muted-foreground">
               {mode === "signin" ? (
                 <>
                   Don't have an account?{" "}
                   <button
                     type="button"
                     onClick={() => setMode("register")}
-                    className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
+                    className="text-primary hover:underline font-medium underline-offset-2"
                   >
                     Register
                   </button>
@@ -203,15 +205,15 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={() => setMode("signin")}
-                    className="text-indigo-500 hover:text-indigo-600 font-medium underline-offset-2 hover:underline"
+                    className="text-primary hover:underline font-medium underline-offset-2"
                   >
                     Sign In
                   </button>
                 </>
               )}
-            </div>
+            </p>
           )}
-        </GlassCard>
+        </div>
       </div>
     </div>
   );

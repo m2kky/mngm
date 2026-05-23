@@ -182,8 +182,8 @@ export default function Onboarding() {
       case 1:
         return (
           <div className="text-center space-y-6">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center mx-auto">
-              <span className="text-white font-bold text-2xl">W</span>
+            <div className="w-20 h-20 rounded-2xl bg-primary flex items-center justify-center mx-auto shadow-sm">
+              <span className="text-primary-foreground font-bold text-2xl">W</span>
             </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">
@@ -385,7 +385,7 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800 p-4">
+    <div className="min-h-screen bg-muted/30 dark:bg-background p-4">
       <div className="max-w-2xl mx-auto py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -429,11 +429,7 @@ export default function Onboarding() {
           </div>
 
           {currentStep === steps.length ? (
-            <Button
-              onClick={handleComplete}
-              disabled={isSubmitting}
-              className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50"
-            >
+            <Button onClick={handleComplete} disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -447,11 +443,7 @@ export default function Onboarding() {
               )}
             </Button>
           ) : (
-            <Button
-              onClick={nextStep}
-              disabled={!isStepValid()}
-              className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button onClick={nextStep} disabled={!isStepValid()}>
               Next
               <ChevronRight className="h-4 w-4 ml-2" />
             </Button>

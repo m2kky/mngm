@@ -150,7 +150,7 @@ export function QuickCreateButton({ collapsed = false }: { collapsed?: boolean }
     <Button
       size="sm"
       onClick={openMenu}
-      className="w-full justify-start gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-sm"
+      className="w-full justify-start gap-2"
       data-testid="button-quick-create"
     >
       <Plus className="h-4 w-4" />

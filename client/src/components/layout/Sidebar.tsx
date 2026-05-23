@@ -1,30 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
-  Home,
-  CheckSquare,
-  FileText,
-  Folder,
-  MessageCircle,
-  Clock,
-  BarChart3,
-  Users,
-  Building,
-  Settings2,
+  Home, CheckSquare, FileText, Folder, MessageCircle,
+  Clock, BarChart3, Users, Building, Settings2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/button";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
+  Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
+  Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useSidebarUI } from "@/contexts/SidebarUIContext";
@@ -51,9 +37,9 @@ const SECTIONS: NavSection[] = [
     id: "work",
     label: "Work",
     items: [
-      { name: "Tasks", href: "/tasks", icon: CheckSquare, shortcut: "G T" },
-      { name: "Pages", href: "/pages", icon: FileText, shortcut: "G P" },
-      { name: "Files", href: "/files", icon: Folder, shortcut: "G F" },
+      { name: "Tasks",  href: "/tasks",  icon: CheckSquare, shortcut: "G T" },
+      { name: "Pages",  href: "/pages",  icon: FileText,    shortcut: "G P" },
+      { name: "Files",  href: "/files",  icon: Folder,      shortcut: "G F" },
     ],
   },
   {
@@ -67,9 +53,9 @@ const SECTIONS: NavSection[] = [
     id: "insights",
     label: "Insights",
     items: [
-      { name: "Attendance", href: "/attendance", icon: Clock, shortcut: "G A" },
-      { name: "Reports", href: "/reports", icon: BarChart3, shortcut: "G R" },
-      { name: "Team", href: "/team", icon: Users, shortcut: "G M" },
+      { name: "Attendance", href: "/attendance", icon: Clock,    shortcut: "G A" },
+      { name: "Reports",    href: "/reports",    icon: BarChart3, shortcut: "G R" },
+      { name: "Team",       href: "/team",       icon: Users,     shortcut: "G M" },
     ],
   },
 ];
@@ -91,13 +77,13 @@ function NavLinks({
 }) {
   const [location] = useLocation();
   return (
-    <nav className="space-y-3">
+    <nav className="space-y-4">
       {sections.map((section) => (
         <div key={section.id}>
           {!collapsed && (
-            <h4 className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 select-none">
               {section.label}
-            </h4>
+            </p>
           )}
           <div className="space-y-0.5">
             {section.items.map((item) => {
@@ -107,21 +93,22 @@ function NavLinks({
                 <Button
                   key={item.name}
                   asChild
-                  variant={isActive ? "secondary" : "ghost"}
+                  variant="ghost"
                   className={cn(
-                    "w-full justify-start transition-colors duration-200 h-9",
-                    isActive && "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
-                    !isActive && "hover:bg-white/10",
-                    collapsed && "px-2 justify-center",
+                    "w-full justify-start h-8 text-sm font-normal transition-colors duration-150",
+                    isActive
+                      ? "bg-primary/10 text-primary font-medium hover:bg-primary/15"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent",
+                    collapsed && "px-0 justify-center w-9",
                   )}
                 >
                   <Link href={item.href} onClick={onNavigate}>
-                    <Icon className={cn("h-4 w-4", !collapsed && "mr-3")} />
+                    <Icon className={cn("h-4 w-4 shrink-0", !collapsed && "mr-2.5")} />
                     {!collapsed && (
                       <>
-                        <span>{item.name}</span>
+                        <span className="flex-1 text-left">{item.name}</span>
                         {item.shortcut && (
-                          <span className="ml-auto text-[10px] font-mono text-muted-foreground opacity-60">
+                          <span className="ml-auto text-[10px] font-mono text-muted-foreground/50">
                             {item.shortcut}
                           </span>
                         )}
@@ -140,9 +127,7 @@ function NavLinks({
                     )}
                   </TooltipContent>
                 </Tooltip>
-              ) : (
-                navBtn
-              );
+              ) : navBtn;
             })}
           </div>
         </div>
@@ -164,29 +149,26 @@ function SidebarInner({
 }) {
   const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
   return (
-    <>
+    <div className="flex flex-col h-full">
       {!collapsed && (
-        <div className="mb-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 px-2">
-            Workspace
-          </h3>
-          <div className="flex items-center space-x-2 p-2 rounded-lg bg-white/10">
-            <div className="w-6 h-6 rounded bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center shrink-0">
-              <Building className="w-3 h-3 text-white" />
+        <div className="mb-4 px-2">
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-muted/60">
+            <div className="w-5 h-5 rounded-[5px] bg-primary flex items-center justify-center shrink-0">
+              <Building className="w-3 h-3 text-primary-foreground" />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+            <span className="text-[13px] font-medium text-foreground truncate">
               {agencyName}
             </span>
           </div>
         </div>
       )}
 
-      <div className="mb-4">
+      <div className="mb-3">
         <QuickCreateButton collapsed={collapsed} />
       </div>
 
       <NavLinks collapsed={collapsed} sections={sections} onNavigate={onNavigate} />
-    </>
+    </div>
   );
 }
 
@@ -212,7 +194,6 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   });
   const agencyName = agency?.name ?? "Workspace";
 
-  // Layout shortcut: "[" toggles the sidebar.
   useShortcut({
     id: "layout.toggle-sidebar",
     keys: "[",
@@ -224,21 +205,20 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
     },
   });
 
-  // Navigation shortcuts: G then <key>.
-  useShortcut({ id: "nav.dashboard", keys: "g+d", sequence: ["g", "d"], label: "Go to Dashboard", group: "Navigation", handler: () => navigate("/dashboard") });
-  useShortcut({ id: "nav.tasks", keys: "g+t", sequence: ["g", "t"], label: "Go to Tasks", group: "Navigation", handler: () => navigate("/tasks") });
-  useShortcut({ id: "nav.pages", keys: "g+p", sequence: ["g", "p"], label: "Go to Pages", group: "Navigation", handler: () => navigate("/pages") });
-  useShortcut({ id: "nav.files", keys: "g+f", sequence: ["g", "f"], label: "Go to Files", group: "Navigation", handler: () => navigate("/files") });
-  useShortcut({ id: "nav.chat", keys: "g+c", sequence: ["g", "c"], label: "Go to Chat", group: "Navigation", handler: () => navigate("/chat") });
-  useShortcut({ id: "nav.attendance", keys: "g+a", sequence: ["g", "a"], label: "Go to Attendance", group: "Navigation", handler: () => navigate("/attendance") });
-  useShortcut({ id: "nav.reports", keys: "g+r", sequence: ["g", "r"], label: "Go to Reports", group: "Navigation", handler: () => navigate("/reports") });
-  useShortcut({ id: "nav.team", keys: "g+m", sequence: ["g", "m"], label: "Go to Team", group: "Navigation", handler: () => navigate("/team") });
-  useShortcut({ id: "nav.settings", keys: "g+s", sequence: ["g", "s"], label: "Go to Settings", group: "Navigation", handler: () => navigate("/settings") });
+  useShortcut({ id: "nav.dashboard",  keys: "g+d", sequence: ["g","d"], label: "Go to Dashboard",  group: "Navigation", handler: () => navigate("/dashboard") });
+  useShortcut({ id: "nav.tasks",      keys: "g+t", sequence: ["g","t"], label: "Go to Tasks",      group: "Navigation", handler: () => navigate("/tasks") });
+  useShortcut({ id: "nav.pages",      keys: "g+p", sequence: ["g","p"], label: "Go to Pages",      group: "Navigation", handler: () => navigate("/pages") });
+  useShortcut({ id: "nav.files",      keys: "g+f", sequence: ["g","f"], label: "Go to Files",      group: "Navigation", handler: () => navigate("/files") });
+  useShortcut({ id: "nav.chat",       keys: "g+c", sequence: ["g","c"], label: "Go to Chat",       group: "Navigation", handler: () => navigate("/chat") });
+  useShortcut({ id: "nav.attendance", keys: "g+a", sequence: ["g","a"], label: "Go to Attendance", group: "Navigation", handler: () => navigate("/attendance") });
+  useShortcut({ id: "nav.reports",    keys: "g+r", sequence: ["g","r"], label: "Go to Reports",    group: "Navigation", handler: () => navigate("/reports") });
+  useShortcut({ id: "nav.team",       keys: "g+m", sequence: ["g","m"], label: "Go to Team",       group: "Navigation", handler: () => navigate("/team") });
+  useShortcut({ id: "nav.settings",   keys: "g+s", sequence: ["g","s"], label: "Go to Settings",   group: "Navigation", handler: () => navigate("/settings") });
 
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-72 p-4 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
+        <SheetContent side="left" className="w-64 p-4 bg-background border-r border-border">
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
           </SheetHeader>
@@ -256,13 +236,13 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "transition-all duration-300 p-4 space-y-4 hidden md:block",
-        isCollapsed ? "w-20" : "w-64",
+        "hidden md:flex flex-col shrink-0 border-r border-border bg-background transition-all duration-250 overflow-hidden",
+        isCollapsed ? "w-[3.25rem]" : "w-56",
       )}
     >
-      <GlassCard className="p-4">
+      <div className={cn("flex-1 p-3 overflow-y-auto", isCollapsed && "flex flex-col items-center")}>
         <SidebarInner collapsed={isCollapsed} agencyName={agencyName} isAdmin={isAdmin} />
-      </GlassCard>
+      </div>
     </aside>
   );
 }

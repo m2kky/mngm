@@ -5,12 +5,12 @@ export type Language = "en" | "ar";
 export type Density = "comfortable" | "compact";
 
 export const ACCENT_COLORS = [
-  { label: "Indigo", value: "indigo", hsl: "231, 98%, 65%" },
-  { label: "Purple", value: "purple", hsl: "271, 91%, 65%" },
-  { label: "Blue", value: "blue", hsl: "217, 91%, 60%" },
-  { label: "Green", value: "green", hsl: "142, 71%, 45%" },
-  { label: "Orange", value: "orange", hsl: "25, 95%, 53%" },
-  { label: "Rose", value: "rose", hsl: "347, 89%, 60%" },
+  { label: "Blue",   value: "indigo",  hsl: "213, 100%, 44%" },
+  { label: "Purple", value: "purple",  hsl: "271, 91%, 65%" },
+  { label: "Sky",    value: "blue",    hsl: "199, 89%, 48%" },
+  { label: "Green",  value: "green",   hsl: "142, 71%, 45%" },
+  { label: "Orange", value: "orange",  hsl: "25, 95%, 53%" },
+  { label: "Rose",   value: "rose",    hsl: "347, 89%, 60%" },
 ] as const;
 
 export type AccentColor = typeof ACCENT_COLORS[number]["value"];
@@ -68,14 +68,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
-
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
-
     if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
       root.classList.add(systemTheme);
     } else {
       root.classList.add(theme);
@@ -99,28 +95,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
 
-  const setAccentColor = (color: AccentColor) => {
-    setAccentColorState(color);
-  };
-
-  const setDensity = (d: Density) => {
-    setDensityState(d);
-  };
-
-  const value = {
-    theme,
-    language,
-    accentColor,
-    density,
-    setTheme,
-    setLanguage,
-    setAccentColor,
-    setDensity,
-    isRTL,
-  };
+  const setAccentColor = (color: AccentColor) => setAccentColorState(color);
+  const setDensity = (d: Density) => setDensityState(d);
 
   return (
-    <ThemeContext.Provider value={value}>
+    <ThemeContext.Provider value={{
+      theme, language, accentColor, density,
+      setTheme, setLanguage, setAccentColor, setDensity,
+      isRTL,
+    }}>
       {children}
     </ThemeContext.Provider>
   );

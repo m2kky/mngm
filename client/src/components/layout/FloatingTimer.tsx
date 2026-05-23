@@ -14,9 +14,10 @@ export function FloatingTimer() {
       <div className="fixed bottom-6 right-6 z-50">
         <Button
           onClick={() => startTimer()}
-          className="rounded-full h-14 w-14 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg"
+          className="rounded-full h-14 w-14 shadow-lg"
+          size="icon"
         >
-          <Play className="h-6 w-6" />
+          <Play className="h-5 w-5" />
         </Button>
       </div>
     );
@@ -26,31 +27,31 @@ export function FloatingTimer() {
     <div className="fixed bottom-6 right-6 z-50">
       <GlassCard
         className={cn(
-          "p-4 cursor-pointer transition-all duration-300 animate-float",
-          isExpanded ? "w-80" : "w-auto"
+          "p-4 cursor-pointer transition-all duration-300",
+          isExpanded ? "w-72" : "w-auto"
         )}
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-mono font-bold text-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-mono font-semibold text-xs shrink-0">
             {formatTime(timeLeft)}
           </div>
-          
+
           {isExpanded && (
-            <div className="flex-1 animate-fade-in">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+            <div className="flex-1 animate-fade-in min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
                 {activeTimer?.taskId ? "Task Timer" : "Focus Timer"}
               </p>
-              <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-1">
-                <div 
-                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all duration-1000"
-                  style={{ 
-                    width: `${((activeTimer?.durationSeconds || 1500) - timeLeft) / (activeTimer?.durationSeconds || 1500) * 100}%` 
+              <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-1.5">
+                <div
+                  className="h-full bg-primary transition-all duration-1000"
+                  style={{
+                    width: `${((activeTimer?.durationSeconds || 1500) - timeLeft) / (activeTimer?.durationSeconds || 1500) * 100}%`,
                   }}
                 />
               </div>
-              
-              <div className="flex space-x-2 mt-2">
+
+              <div className="flex gap-2 mt-2.5">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -58,7 +59,7 @@ export function FloatingTimer() {
                     e.stopPropagation();
                     isRunning ? pauseTimer() : resumeTimer();
                   }}
-                  className="flex-1"
+                  className="flex-1 h-7"
                 >
                   {isRunning ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                 </Button>
@@ -69,7 +70,7 @@ export function FloatingTimer() {
                     e.stopPropagation();
                     stopTimer();
                   }}
-                  className="flex-1"
+                  className="flex-1 h-7"
                 >
                   <Square className="h-3 w-3" />
                 </Button>
