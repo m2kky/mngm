@@ -1,24 +1,26 @@
 import { useState, useEffect } from "react";
 import { Redirect, useSearch } from "wouter";
-import { Loader2, Mail, Lock, Eye, EyeOff, User } from "lucide-react";
+import { Loader2, Mail, Lock, Eye, EyeOff, User, KeyRound } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
-  const { currentUser, signIn, signUp } = useAuth();
+  const { currentUser, signIn, signUp, verifyOtp } = useAuth();
   const { toast } = useToast();
   const search = useSearch();
 
   const params = new URLSearchParams(search);
   const inviteToken = params.get("invite") ?? null;
 
-  const [mode, setMode] = useState<"signin" | "register">(inviteToken ? "register" : "signin");
+  const [mode, setMode] = useState<"signin" | "register" | "otp">(inviteToken ? "register" : "signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otpValue, setOtpValue] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [inviteInfo, setInviteInfo] = useState<{ email: string; role: string } | null>(null);
@@ -56,12 +58,23 @@ export default function Login() {
       if (mode === "signin") {
         await signIn(email, password);
         toast({ title: "Welcome back!" });
+      } else if (mode === "otp") {
+        await verifyOtp(email, otpValue);
+        toast({ title: "Email verified successfully!" });
       } else {
-        await signUp(name, email, password, inviteToken ?? undefined);
-        toast({
-          title: "Account created!",
-          description: inviteToken ? "You've joined the workspace." : "Let's set up your workspace.",
-        });
+        const res = await signUp(name, email, password, inviteToken ?? undefined);
+        if (res.requiresVerification) {
+          setMode("otp");
+          toast({
+            title: "Check your email",
+            description: "We've sent a 6-digit verification code to your email.",
+          });
+        } else {
+          toast({
+            title: "Account created!",
+            description: inviteToken ? "You've joined the workspace." : "Let's set up your workspace.",
+          });
+        }
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Something went wrong";
@@ -82,7 +95,9 @@ export default function Login() {
             Welcome to Workit.OS
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">
-            {inviteToken
+            {mode === "otp"
+              ? "Verify your email address"
+              : inviteToken
               ? "You've been invited to join a workspace"
               : mode === "signin"
               ? "Sign in to your workspace"
@@ -104,89 +119,115 @@ export default function Login() {
 
         <div className="bg-background border border-border rounded-xl shadow-sm p-6 space-y-5">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === "register" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Full Name</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Your name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="pl-9"
-                    required
-                    disabled={isLoading}
-                  />
+            {mode === "otp" ? (
+              <div className="space-y-4 flex flex-col items-center">
+                <div className="text-center space-y-2">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                    <KeyRound className="h-6 w-6 text-primary" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Enter the 6-digit code sent to <br />
+                    <span className="font-medium text-foreground">{email}</span>
+                  </p>
                 </div>
+                <InputOTP maxLength={6} value={otpValue} onChange={setOtpValue} disabled={isLoading}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
               </div>
+            ) : (
+              <>
+                {mode === "register" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="name"
+                        type="text"
+                        placeholder="Your name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="pl-9"
+                        required
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="name@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-9"
+                      required
+                      disabled={isLoading || (!!inviteToken && !!inviteInfo)}
+                      autoComplete="email"
+                    />
+                  </div>
+                  {inviteToken && inviteInfo && (
+                    <p className="text-xs text-muted-foreground">Email is pre-filled from your invitation.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-9 pr-10"
+                      required
+                      disabled={isLoading}
+                      autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                      minLength={8}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {mode === "register" && (
+                    <p className="text-xs text-muted-foreground">Minimum 8 characters</p>
+                  )}
+                </div>
+              </>
             )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-9"
-                  required
-                  disabled={isLoading || (!!inviteToken && !!inviteInfo)}
-                  autoComplete="email"
-                />
-              </div>
-              {inviteToken && inviteInfo && (
-                <p className="text-xs text-muted-foreground">Email is pre-filled from your invitation.</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-9 pr-10"
-                  required
-                  disabled={isLoading}
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  minLength={8}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
-                  onClick={() => setShowPassword(!showPassword)}
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              {mode === "register" && (
-                <p className="text-xs text-muted-foreground">Minimum 8 characters</p>
-              )}
-            </div>
 
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading || (!!inviteToken && !!inviteError)}
+              disabled={isLoading || (!!inviteToken && !!inviteError) || (mode === "otp" && otpValue.length < 6)}
             >
               {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {mode === "signin" ? "Sign In" : "Create Account"}
+              {mode === "signin" ? "Sign In" : mode === "otp" ? "Verify Email" : "Create Account"}
             </Button>
           </form>
 
-          {!inviteToken && (
+          {!inviteToken && mode !== "otp" && (
             <p className="text-center text-sm text-muted-foreground">
               {mode === "signin" ? (
                 <>

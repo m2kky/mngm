@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   Home, CheckSquare, FileText, Folder, MessageCircle,
   Clock, BarChart3, Users, Building, Settings2,
+  FolderKanban, Building2
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,8 @@ const SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { name: "Dashboard", href: "/dashboard", icon: Home, shortcut: "G D" },
+      { name: "Clients", href: "/clients", icon: Building2, shortcut: "G C" },
+      { name: "Projects", href: "/projects", icon: FolderKanban, shortcut: "G P" },
     ],
   },
   {
@@ -38,7 +41,7 @@ const SECTIONS: NavSection[] = [
     label: "Work",
     items: [
       { name: "Tasks",  href: "/tasks",  icon: CheckSquare, shortcut: "G T" },
-      { name: "Pages",  href: "/pages",  icon: FileText,    shortcut: "G P" },
+      { name: "Pages",  href: "/pages",  icon: FileText,    shortcut: "G N" },
       { name: "Files",  href: "/files",  icon: Folder,      shortcut: "G F" },
     ],
   },
@@ -46,7 +49,7 @@ const SECTIONS: NavSection[] = [
     id: "communication",
     label: "Communication",
     items: [
-      { name: "Chat", href: "/chat", icon: MessageCircle, shortcut: "G C" },
+      { name: "Chat", href: "/chat", icon: MessageCircle, shortcut: "G M" },
     ],
   },
   {
@@ -55,7 +58,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { name: "Attendance", href: "/attendance", icon: Clock,    shortcut: "G A" },
       { name: "Reports",    href: "/reports",    icon: BarChart3, shortcut: "G R" },
-      { name: "Team",       href: "/team",       icon: Users,     shortcut: "G M" },
+      { name: "Team",       href: "/team",       icon: Users,     shortcut: "G U" },
     ],
   },
 ];
@@ -206,13 +209,15 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   });
 
   useShortcut({ id: "nav.dashboard",  keys: "g+d", sequence: ["g","d"], label: "Go to Dashboard",  group: "Navigation", handler: () => navigate("/dashboard") });
+  useShortcut({ id: "nav.clients",    keys: "g+c", sequence: ["g","c"], label: "Go to Clients",    group: "Navigation", handler: () => navigate("/clients") });
+  useShortcut({ id: "nav.projects",   keys: "g+p", sequence: ["g","p"], label: "Go to Projects",   group: "Navigation", handler: () => navigate("/projects") });
   useShortcut({ id: "nav.tasks",      keys: "g+t", sequence: ["g","t"], label: "Go to Tasks",      group: "Navigation", handler: () => navigate("/tasks") });
-  useShortcut({ id: "nav.pages",      keys: "g+p", sequence: ["g","p"], label: "Go to Pages",      group: "Navigation", handler: () => navigate("/pages") });
+  useShortcut({ id: "nav.pages",      keys: "g+n", sequence: ["g","n"], label: "Go to Pages",      group: "Navigation", handler: () => navigate("/pages") });
   useShortcut({ id: "nav.files",      keys: "g+f", sequence: ["g","f"], label: "Go to Files",      group: "Navigation", handler: () => navigate("/files") });
-  useShortcut({ id: "nav.chat",       keys: "g+c", sequence: ["g","c"], label: "Go to Chat",       group: "Navigation", handler: () => navigate("/chat") });
+  useShortcut({ id: "nav.chat",       keys: "g+m", sequence: ["g","m"], label: "Go to Chat",       group: "Navigation", handler: () => navigate("/chat") });
   useShortcut({ id: "nav.attendance", keys: "g+a", sequence: ["g","a"], label: "Go to Attendance", group: "Navigation", handler: () => navigate("/attendance") });
   useShortcut({ id: "nav.reports",    keys: "g+r", sequence: ["g","r"], label: "Go to Reports",    group: "Navigation", handler: () => navigate("/reports") });
-  useShortcut({ id: "nav.team",       keys: "g+m", sequence: ["g","m"], label: "Go to Team",       group: "Navigation", handler: () => navigate("/team") });
+  useShortcut({ id: "nav.team",       keys: "g+u", sequence: ["g","u"], label: "Go to Team",       group: "Navigation", handler: () => navigate("/team") });
   useShortcut({ id: "nav.settings",   keys: "g+s", sequence: ["g","s"], label: "Go to Settings",   group: "Navigation", handler: () => navigate("/settings") });
 
   if (isMobile) {

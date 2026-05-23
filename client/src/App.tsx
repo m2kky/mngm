@@ -27,6 +27,8 @@ import Team from "@/pages/Team";
 import ClientPortalPage from "@/pages/ClientPortalPage";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
+import Clients from "@/pages/Clients";
+import Projects from "@/pages/Projects";
 
 function LoadingSpinner() {
   return (
@@ -89,6 +91,16 @@ function Router() {
       <Route path="/dashboard">
         <InternalRoute>
           <Dashboard />
+        </InternalRoute>
+      </Route>
+      <Route path="/clients">
+        <InternalRoute>
+          <Clients />
+        </InternalRoute>
+      </Route>
+      <Route path="/projects">
+        <InternalRoute>
+          <Projects />
         </InternalRoute>
       </Route>
       <Route path="/tasks">

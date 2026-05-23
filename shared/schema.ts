@@ -782,6 +782,7 @@ export const templateBlocks = pgTable("template_blocks", {
 export const taskProperties = pgTable("task_properties", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: propertyTypeEnum("type").notNull(),
   options: jsonb("options"),
@@ -791,6 +792,7 @@ export const taskProperties = pgTable("task_properties", {
 }, (t) => [
   uniqueIndex("task_properties_agency_name_idx").on(t.agencyId, t.name),
   index("task_properties_agency_id_idx").on(t.agencyId),
+  index("task_properties_project_id_idx").on(t.projectId),
 ]);
 
 export const taskPropertyValues = pgTable("task_property_values", {

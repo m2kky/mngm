@@ -1,0 +1,1338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  PROJECT_MANAGER
+  TEAM_MEMBER
+  CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DEACTIVATED
+}
+
+enum AgencyPlan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  AT_RISK
+  CHURNED
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ProjectType {
+  ONGOING
+  ONE_TIME
+  RETAINER
+}
+
+enum TaskType {
+  DESIGN
+  COPY
+  DEVELOPMENT
+  SOCIAL_POST
+  MEETING
+  REVIEW
+  STRATEGY
+  OTHER
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum StrategyStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+}
+
+enum TaskReviewStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  PM_OVERRIDE
+}
+
+enum PortalUserStatus {
+  ACTIVE
+  INVITED
+  DEACTIVATED
+}
+
+enum CommentAuthorType {
+  TEAM
+  CLIENT
+  SYSTEM
+}
+
+enum ReviewOutcome {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum FaultAttribution {
+  AGENCY_ERROR
+  CLIENT_CHANGED_MIND
+  BRIEF_UNCLEAR
+  TECHNICAL_ISSUE
+}
+
+enum AttachmentContext {
+  GENERAL
+  CLIENT_FILE
+  PROJECT_FILE
+  TASK_FILE
+  TASK_COMMENT
+  BRAND_KIT
+  STRATEGY
+  CLIENT_REVIEW
+}
+
+enum TimeEntrySource {
+  TIMER
+  MANUAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum BlockType {
+  PARAGRAPH
+  HEADING1
+  HEADING2
+  TOGGLE
+  CALLOUT
+  CODE
+  IMAGE
+  DIVIDER
+  BULLET_LIST
+  NUMBERED_LIST
+}
+
+enum PropertyType {
+  TEXT
+  NUMBER
+  SELECT
+  MULTI_SELECT
+  DATE
+  CHECKBOX
+  URL
+  RELATION
+  ROLLUP
+}
+
+enum ViewType {
+  BOARD
+  TABLE
+  CALENDAR
+  GALLERY
+  TIMELINE
+  LIST
+}
+
+enum AutomationRunStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_COMPLETED
+  COMMENT_ADDED
+  COMMENT_MENTION
+  CLIENT_REVIEW_REQUESTED
+  CLIENT_APPROVED
+  CLIENT_REJECTED
+  INVITATION_RECEIVED
+  PROJECT_UPDATED
+  SYSTEM_ALERT
+}
+
+enum WorkspaceEventType {
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_DELETED
+  TASK_MOVED
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  COMMENT_ADDED
+  COMMENT_DELETED
+  FILE_UPLOADED
+  FILE_DELETED
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  REVIEW_SUBMITTED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String     @unique
+  emailVerified Boolean    @default(false)
+  image         String?
+  status        UserStatus @default(ACTIVE)
+  language      String     @default("en")
+  theme         String     @default("system")
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  role     Role    @default(TEAM_MEMBER)
+  agencyId String?
+  agency   Agency? @relation("AgencyMembers", fields: [agencyId], references: [id], onDelete: SetNull)
+
+  sessions Session[]
+  accounts Account[]
+
+  ownedAgencies           Agency[]                 @relation("AgencyOwner")
+  invitations             Invitation[]             @relation("InvitedBy")
+  receivedInvites         Invitation[]             @relation("InvitedUser")
+  projectMemberships      ProjectMember[]
+  createdClients          Client[]                 @relation("ClientCreatedBy")
+  createdProjects         Project[]                @relation("ProjectCreatedBy")
+  createdStrategies       ClientStrategy[]         @relation("StrategyCreatedBy")
+  createdTasks            Task[]                   @relation("TaskCreatedBy")
+  reviewingTasks          Task[]                   @relation("TaskReviewer")
+  taskAssignments         TaskAssignee[]
+  assignedSubtasks        Subtask[]
+  uploadedFiles           FileAsset[]              @relation("FileUploadedBy")
+  comments                TaskComment[]            @relation("CommentAuthorUser")
+  commentReactions        CommentReaction[]        @relation("ReactionUser")
+  timeEntries             TimeEntry[]
+  notifications           Notification[]           @relation("NotificationRecipientUser")
+  notificationActorEvents Notification[]           @relation("NotificationActorUser")
+  notificationPreferences NotificationPreference[]
+  activityLogs            ActivityLog[]            @relation("ActivityActorUser")
+  workspaceEvents         WorkspaceEvent[]         @relation("WorkspaceEventActorUser")
+  qualityEvents           QualityEvent[]           @relation("QualityEventMember")
+  qualitySnapshots        QualitySnapshot[]        @relation("QualitySnapshotMember")
+  createdAutomationRules  AutomationRule[]         @relation("AutomationRuleCreatedBy")
+  createdProjectTemplates ProjectTemplate[]        @relation("ProjectTemplateCreatedBy")
+  createdTaskTemplates    TaskTemplate[]           @relation("TaskTemplateCreatedBy")
+
+  @@index([agencyId])
+  @@index([status])
+}
+
+model Agency {
+  id                  String     @id @default(cuid())
+  name                String
+  slug                String?    @unique
+  logo                String?
+  timezone            String     @default("Africa/Cairo")
+  currency            String     @default("EGP")
+  locale              String     @default("ar-EG")
+  plan                AgencyPlan @default(FREE)
+  onboardingCompleted Boolean    @default(false)
+  workingDays         Int[]      @default([0, 1, 2, 3, 4])
+  workingHoursStart   String     @default("09:00")
+  workingHoursEnd     String     @default("17:00")
+  ownerId             String?
+  owner               User?      @relation("AgencyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  users                   User[]                   @relation("AgencyMembers")
+  invitations             Invitation[]
+  clients                 Client[]
+  clientPortalUsers       ClientPortalUser[]
+  projects                Project[]
+  tags                    Tag[]
+  files                   FileAsset[]
+  comments                TaskComment[]
+  timeEntries             TimeEntry[]
+  clientReviews           ClientReview[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  activityLogs            ActivityLog[]
+  qualityEvents           QualityEvent[]
+  qualitySnapshots        QualitySnapshot[]
+  automationRules         AutomationRule[]
+  automationRuns          AutomationRun[]
+  projectTemplates        ProjectTemplate[]
+  taskTemplates           TaskTemplate[]
+  workspaceEvents         WorkspaceEvent[]
+  vectorEmbeddings        VectorEmbedding[]
+  tasks                   Task[]
+  taskProperties          TaskProperty[]
+
+  @@index([ownerId])
+}
+
+model Client {
+  id            String       @id @default(cuid())
+  name          String
+  slug          String?
+  status        ClientStatus @default(ACTIVE)
+  industry      String?
+  website       String?
+  logo          String?
+  coverImage    String?
+  iconEmoji     String?
+  iconColor     String?
+  notes         String?
+  healthScore   Int          @default(0)
+  portalEnabled Boolean      @default(false)
+  contractType  String?
+  monthlyBudget Decimal?     @db.Decimal(12, 2)
+  hourlyRate    Decimal?     @db.Decimal(8, 2)
+  createdById   String?
+  createdBy     User?        @relation("ClientCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt    DateTime?
+  deletedAt     DateTime?
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  contacts         ClientContact[]
+  portalUsers      ClientPortalUser[]
+  brandKit         BrandKit?
+  strategy         ClientStrategy?
+  projects         Project[]
+  files            FileAsset[]
+  clientReviews    ClientReview[]
+  activityLogs     ActivityLog[]
+  timeEntries      TimeEntry[]
+  qualityEvents    QualityEvent[]
+  qualitySnapshots QualitySnapshot[]
+  workspaceEvents  WorkspaceEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  blocks    Block[]
+
+  @@unique([agencyId, slug])
+  @@index([agencyId])
+  @@index([agencyId, status])
+  @@index([createdById])
+}
+
+model ClientContact {
+  id        String  @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  position  String?
+  roleType  String?
+  isPrimary Boolean @default(false)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  portalUser   ClientPortalUser?
+  activityLogs ActivityLog[]     @relation("ActivityLogContact")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([email])
+}
+
+model ClientPortalUser {
+  id                String           @id @default(cuid())
+  agencyId          String
+  agency            Agency           @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  clientId          String
+  client            Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId         String?          @unique
+  contact           ClientContact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  email             String
+  name              String
+  image             String?
+  status            PortalUserStatus @default(INVITED)
+  canApprove        Boolean          @default(true)
+  canComment        Boolean          @default(true)
+  canViewFinancials Boolean          @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  uploadedFiles           FileAsset[]              @relation("FileUploadedByClient")
+  comments                TaskComment[]            @relation("CommentAuthorClient")
+  commentReactions        CommentReaction[]        @relation("ReactionClient")
+  reviews                 ClientReview[]
+  notifications           Notification[]           @relation("NotificationRecipientClient")
+  notificationActorEvents Notification[]           @relation("NotificationActorClient")
+  notificationPreferences NotificationPreference[]
+  activityLogs            ActivityLog[]            @relation("ActivityActorClient")
+  workspaceEvents         WorkspaceEvent[]
+
+  @@unique([clientId, email])
+  @@index([agencyId])
+  @@index([email])
+}
+
+model BrandKit {
+  id                String  @id @default(cuid())
+  primaryColor      String?
+  secondaryColor    String?
+  accentColor       String?
+  additionalColors  Json?
+  primaryFont       String?
+  secondaryFont     String?
+  toneOfVoice       String?
+  targetAudience    String?
+  dos               Json?
+  donts             Json?
+  logoFileUrl       String?
+  guidelinesFileUrl String?
+  assetLibrary      Json?
+  completionPercent Int     @default(0)
+
+  clientId String @unique
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  files FileAsset[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClientStrategy {
+  id                String         @id @default(cuid())
+  status            StrategyStatus @default(NOT_STARTED)
+  currentStep       Int            @default(1)
+  situation         Json?
+  objectives        Json?
+  strategy          Json?
+  tactics           Json?
+  action            Json?
+  control           Json?
+  kpis              Json?
+  completionPercent Int            @default(0)
+  createdById       String?
+  createdBy         User?          @relation("StrategyCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  clientId String @unique
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  files FileAsset[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdById])
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  type         ProjectType   @default(ONE_TIME)
+  status       ProjectStatus @default(PLANNING)
+  priority     TaskPriority  @default(MEDIUM)
+  progress     Int           @default(0)
+  startDate    DateTime?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  budgetHours  Decimal?      @db.Decimal(8, 2)
+  budgetAmount Decimal?      @db.Decimal(12, 2)
+  coverImage   String?
+  iconEmoji    String?
+  iconColor    String?
+  createdById  String?
+  createdBy    User?         @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt   DateTime?
+  deletedAt    DateTime?
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  members          ProjectMember[]
+  stages           ProjectStage[]
+  tasks            Task[]
+  files            FileAsset[]
+  timeEntries      TimeEntry[]
+  clientReviews    ClientReview[]
+  activityLogs     ActivityLog[]
+  qualityEvents    QualityEvent[]
+  qualitySnapshots QualitySnapshot[]
+  automationRules  AutomationRule[]
+  workspaceEvents  WorkspaceEvent[]
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  blocks       Block[]
+  projectViews ProjectView[]
+  taskProperties TaskProperty[]
+
+  @@index([agencyId])
+  @@index([agencyId, status])
+  @@index([clientId])
+  @@index([createdById])
+}
+
+model ProjectMember {
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role Role @default(TEAM_MEMBER)
+
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+}
+
+model ProjectStage {
+  id             String  @id @default(cuid())
+  name           String
+  color          String?
+  order          Int
+  wipLimit       Int?
+  isDefault      Boolean @default(false)
+  isDone         Boolean @default(false)
+  isClientReview Boolean @default(false)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  tasks Task[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, name])
+  @@unique([projectId, order])
+  @@index([projectId])
+}
+
+model Task {
+  id               String           @id @default(cuid())
+  title            String
+  description      String?
+  type             TaskType         @default(DESIGN)
+  priority         TaskPriority     @default(MEDIUM)
+  reviewStatus     TaskReviewStatus @default(NOT_REQUIRED)
+  startDate        DateTime?
+  dueDate          DateTime?
+  completedAt      DateTime?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  estimatedMinutes Int?
+  actualMinutes    Int              @default(0)
+  coverImage       String?
+  iconEmoji        String?
+  iconColor        String?
+  position         Int              @default(0)
+  archivedAt       DateTime?
+  deletedAt        DateTime?
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  stageId String
+  stage   ProjectStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  reviewerId String?
+  reviewer   User?   @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  assignees       TaskAssignee[]
+  subtasks        Subtask[]
+  tagLinks        TaskTag[]
+  comments        TaskComment[]
+  files           FileAsset[]
+  timeEntries     TimeEntry[]
+  clientReviews   ClientReview[]
+  activityLogs    ActivityLog[]
+  qualityEvents   QualityEvent[]
+  workspaceEvents WorkspaceEvent[]
+
+  dependencies TaskDependency[] @relation("TaskDependencies")
+  blockedBy    TaskDependency[] @relation("TaskBlockedBy")
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  blocks             Block[]
+  taskPropertyValues TaskPropertyValue[]
+
+  @@index([agencyId])
+  @@index([agencyId, reviewStatus])
+  @@index([projectId])
+  @@index([stageId])
+  @@index([createdById])
+  @@index([reviewerId])
+  @@index([dueDate])
+}
+
+model TaskAssignee {
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([taskId, userId])
+  @@index([userId])
+}
+
+model Subtask {
+  id          String    @id @default(cuid())
+  title       String
+  isDone      Boolean   @default(false)
+  dueDate     DateTime?
+  completedAt DateTime?
+  position    Int       @default(0)
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([taskId])
+  @@index([assigneeId])
+}
+
+model TaskDependency {
+  taskId String
+  task   Task   @relation("TaskDependencies", fields: [taskId], references: [id], onDelete: Cascade)
+
+  dependsOnTaskId String
+  dependsOnTask   Task   @relation("TaskBlockedBy", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String
+  color     String    @default("#64748b")
+  agencyId  String
+  agency    Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  tasks     TaskTag[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([agencyId, name])
+  @@index([agencyId])
+}
+
+model TaskTag {
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([taskId, tagId])
+  @@index([tagId])
+}
+
+model FileAsset {
+  id                           String            @id @default(cuid())
+  agencyId                     String
+  agency                       Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  clientId                     String?
+  client                       Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId                    String?
+  project                      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId                       String?
+  task                         Task?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  commentId                    String?
+  comment                      TaskComment?      @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  brandKitId                   String?
+  brandKit                     BrandKit?         @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
+  strategyId                   String?
+  strategy                     ClientStrategy?   @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  uploadedById                 String?
+  uploadedBy                   User?             @relation("FileUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedByClientPortalUserId String?
+  uploadedByClientPortalUser   ClientPortalUser? @relation("FileUploadedByClient", fields: [uploadedByClientPortalUserId], references: [id], onDelete: SetNull)
+  fileName                     String
+  fileKey                      String
+  fileUrl                      String
+  thumbnailUrl                 String?
+  mimeType                     String
+  fileSize                     Int
+  checksum                     String?
+  context                      AttachmentContext @default(GENERAL)
+  folder                       String?
+  metadata                     Json?
+  deletedAt                    DateTime?
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime          @updatedAt
+
+  @@unique([agencyId, fileKey])
+  @@index([agencyId])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([commentId])
+  @@index([brandKitId])
+  @@index([strategyId])
+  @@index([uploadedById])
+  @@index([uploadedByClientPortalUserId])
+}
+
+model TaskComment {
+  id                       String            @id @default(cuid())
+  agencyId                 String
+  agency                   Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  taskId                   String
+  task                     Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorType               CommentAuthorType @default(TEAM)
+  authorUserId             String?
+  authorUser               User?             @relation("CommentAuthorUser", fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorClientPortalUserId String?
+  authorClientPortalUser   ClientPortalUser? @relation("CommentAuthorClient", fields: [authorClientPortalUserId], references: [id], onDelete: SetNull)
+  content                  String
+  mentions                 String[]          @default([])
+  isClientFeedback         Boolean           @default(false)
+  parentCommentId          String?
+  parentComment            TaskComment?      @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: SetNull)
+  replies                  TaskComment[]     @relation("CommentReplies")
+  files                    FileAsset[]
+  reactions                CommentReaction[]
+  review                   ClientReview?     @relation("ReviewComment")
+  editedAt                 DateTime?
+  deletedAt                DateTime?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  @@index([agencyId])
+  @@index([taskId, createdAt])
+  @@index([authorUserId])
+  @@index([authorClientPortalUserId])
+  @@index([parentCommentId])
+}
+
+model CommentReaction {
+  id                 String            @id @default(cuid())
+  commentId          String
+  comment            TaskComment       @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId             String?
+  user               User?             @relation("ReactionUser", fields: [userId], references: [id], onDelete: SetNull)
+  clientPortalUserId String?
+  clientPortalUser   ClientPortalUser? @relation("ReactionClient", fields: [clientPortalUserId], references: [id], onDelete: SetNull)
+  emoji              String
+  createdAt          DateTime          @default(now())
+
+  @@index([commentId])
+  @@index([userId])
+  @@index([clientPortalUserId])
+}
+
+model TimeEntry {
+  id              String          @id @default(cuid())
+  agencyId        String
+  agency          Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId        String?
+  client          Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId          String?
+  task            Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  startTime       DateTime
+  endTime         DateTime?
+  durationMinutes Int?
+  note            String?
+  billable        Boolean         @default(true)
+  source          TimeEntrySource @default(MANUAL)
+  editedAt        DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([agencyId, userId, startTime])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+}
+
+model ClientReview {
+  id               String            @id @default(cuid())
+  agencyId         String
+  agency           Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId           String
+  task             Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reviewerId       String?
+  reviewer         ClientPortalUser? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+  outcome          ReviewOutcome
+  reason           String?
+  faultAttribution FaultAttribution?
+  commentId        String?           @unique
+  comment          TaskComment?      @relation("ReviewComment", fields: [commentId], references: [id], onDelete: SetNull)
+  metadata         Json?
+  reviewedAt       DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  qualityEvents QualityEvent[]
+
+  @@index([agencyId, reviewedAt])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([reviewerId])
+  @@index([outcome])
+}
+
+model QualityEvent {
+  id               String            @id @default(cuid())
+  agencyId         String
+  agency           Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId           String?
+  task             Task?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  memberId         String?
+  member           User?             @relation("QualityEventMember", fields: [memberId], references: [id], onDelete: SetNull)
+  reviewId         String?
+  review           ClientReview?     @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  eventType        String
+  approved         Boolean?
+  faultAttribution FaultAttribution?
+  scoreImpact      Int?
+  reason           String?
+  metadata         Json?
+  occurredAt       DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+
+  @@index([agencyId, occurredAt])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([memberId])
+  @@index([reviewId])
+  @@index([eventType])
+}
+
+model QualitySnapshot {
+  id            String   @id @default(cuid())
+  agencyId      String
+  agency        Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  clientId      String?
+  client        Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  scopeType     String
+  projectId     String?
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  memberId      String?
+  member        User?    @relation("QualitySnapshotMember", fields: [memberId], references: [id], onDelete: Cascade)
+  periodStart   DateTime
+  periodEnd     DateTime
+  approvalRate  Decimal? @db.Decimal(5, 2)
+  totalReviewed Int      @default(0)
+  totalRejected Int      @default(0)
+  averageScore  Decimal? @db.Decimal(5, 2)
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([agencyId, scopeType, projectId, memberId])
+  @@index([clientId])
+  @@index([periodStart, periodEnd])
+}
+
+model Notification {
+  id                      String              @id @default(cuid())
+  agencyId                String
+  agency                  Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  userId                  String?
+  user                    User?               @relation("NotificationRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+  clientPortalUserId      String?
+  clientPortalUser        ClientPortalUser?   @relation("NotificationRecipientClient", fields: [clientPortalUserId], references: [id], onDelete: Cascade)
+  type                    NotificationType
+  channel                 NotificationChannel @default(IN_APP)
+  title                   String
+  body                    String?
+  actorUserId             String?
+  actorUser               User?               @relation("NotificationActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorClientPortalUserId String?
+  actorClientPortalUser   ClientPortalUser?   @relation("NotificationActorClient", fields: [actorClientPortalUserId], references: [id], onDelete: SetNull)
+  entityType              String?
+  entityId                String?
+  deepLink                String?
+  readAt                  DateTime?
+  archivedAt              DateTime?
+  createdAt               DateTime            @default(now())
+
+  @@index([agencyId])
+  @@index([userId, readAt, createdAt])
+  @@index([clientPortalUserId, readAt, createdAt])
+  @@index([type])
+  @@index([entityType, entityId])
+}
+
+model NotificationPreference {
+  id                 String            @id @default(cuid())
+  agencyId           String
+  agency             Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  userId             String?
+  user               User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientPortalUserId String?
+  clientPortalUser   ClientPortalUser? @relation(fields: [clientPortalUserId], references: [id], onDelete: Cascade)
+  type               NotificationType
+  inAppEnabled       Boolean           @default(true)
+  emailEnabled       Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([agencyId])
+  @@index([userId])
+  @@index([clientPortalUserId])
+  @@index([type])
+}
+
+model ActivityLog {
+  id                      String             @id @default(cuid())
+  agencyId                String
+  agency                  Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  actorUserId             String?
+  actorUser               User?              @relation("ActivityActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorClientPortalUserId String?
+  actorClientPortalUser   ClientPortalUser?  @relation("ActivityActorClient", fields: [actorClientPortalUserId], references: [id], onDelete: SetNull)
+  contactId               String?
+  contact                 ClientContact?     @relation("ActivityLogContact", fields: [contactId], references: [id], onDelete: SetNull)
+  clientId                String?
+  client                  Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId               String?
+  project                 Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId                  String?
+  task                    Task?              @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  eventType               WorkspaceEventType
+  entityType              String
+  entityId                String
+  summary                 String?
+  metadata                Json?
+  createdAt               DateTime           @default(now())
+
+  @@index([agencyId, createdAt])
+  @@index([actorUserId])
+  @@index([actorClientPortalUserId])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([entityType, entityId])
+  @@index([eventType])
+  @@index([contactId])
+}
+
+model AutomationRule {
+  id              String          @id @default(cuid())
+  agencyId        String
+  agency          Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  triggerType     String
+  conditions      Json?
+  actionType      String
+  actions         Json?
+  name            String
+  enabled         Boolean         @default(true)
+  createdById     String?
+  createdBy       User?           @relation("AutomationRuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lastTriggeredAt DateTime?
+  executionCount  Int             @default(0)
+  runs            AutomationRun[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([agencyId, enabled])
+  @@index([projectId])
+  @@index([triggerType])
+  @@index([createdById])
+}
+
+model AutomationRun {
+  id           String              @id @default(cuid())
+  agencyId     String
+  agency       Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  ruleId       String?
+  rule         AutomationRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  status       AutomationRunStatus @default(PENDING)
+  triggerEvent String
+  entityType   String?
+  entityId     String?
+  actions      Json?
+  errorMessage String?
+  startedAt    DateTime            @default(now())
+  finishedAt   DateTime?
+
+  @@index([agencyId, startedAt])
+  @@index([ruleId])
+  @@index([status])
+  @@index([entityType, entityId])
+}
+
+model ProjectTemplate {
+  id                    String                 @id @default(cuid())
+  agencyId              String
+  agency                Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  name                  String
+  description           String?
+  type                  ProjectType?
+  createdById           String?
+  createdBy             User?                  @relation("ProjectTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt            DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  templateBlocks        TemplateBlock[]
+  projectTemplateStages ProjectTemplateStage[]
+
+  @@index([agencyId])
+  @@index([createdById])
+}
+
+model TaskTemplate {
+  id                     String                 @id @default(cuid())
+  agencyId               String
+  agency                 Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  name                   String
+  type                   TaskType
+  defaultPriority        TaskPriority           @default(MEDIUM)
+  defaultAssigneeRole    Role?
+  estimatedMinutes       Int?
+  defaultTags            String[]               @default([])
+  createdById            String?
+  createdBy              User?                  @relation("TaskTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt             DateTime?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  templateBlocks         TemplateBlock[]
+  taskTemplateProperties TaskTemplateProperty[]
+
+  @@index([agencyId])
+  @@index([type])
+  @@index([createdById])
+}
+
+model WorkspaceEvent {
+  id                      String             @id @default(cuid())
+  agencyId                String
+  agency                  Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  actorUserId             String?
+  actorUser               User?              @relation("WorkspaceEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorClientPortalUserId String?
+  actorClientPortalUser   ClientPortalUser?  @relation(fields: [actorClientPortalUserId], references: [id], onDelete: SetNull)
+  clientId                String?
+  client                  Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId               String?
+  project                 Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId                  String?
+  task                    Task?              @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  eventType               WorkspaceEventType
+  entityType              String
+  entityId                String
+  payload                 Json
+  processedForAi          Boolean            @default(false)
+  occurredAt              DateTime           @default(now())
+
+  @@index([agencyId, occurredAt])
+  @@index([actorUserId])
+  @@index([actorClientPortalUserId])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([eventType])
+  @@index([processedForAi])
+}
+
+model VectorEmbedding {
+  id         String                 @id @default(cuid())
+  agencyId   String
+  agency     Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  sourceType String
+  sourceId   String
+  content    String
+  embedding  Unsupported("vector")?
+  metadata   Json?
+  createdAt  DateTime               @default(now())
+
+  @@index([agencyId, sourceType])
+}
+
+model Invitation {
+  id         String           @id @default(cuid())
+  email      String
+  role       Role             @default(TEAM_MEMBER)
+  status     InvitationStatus @default(PENDING)
+  token      String           @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  invitedById String
+  invitedBy   User   @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  userId String?
+  user   User?   @relation("InvitedUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId, status])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+// --- Notion-Like Overhaul Additions ---
+
+model Block {
+  id       String    @id @default(cuid())
+  type     BlockType
+  content  Json?
+  position Int
+  parentId String?
+  parent   Block?    @relation("BlockChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children Block[]   @relation("BlockChildren")
+
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+  @@index([projectId])
+  @@index([clientId])
+  @@index([parentId])
+}
+
+model TemplateBlock {
+  id       String          @id @default(cuid())
+  type     BlockType
+  content  Json?
+  position Int
+  parentId String?
+  parent   TemplateBlock?  @relation("TemplateBlockChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children TemplateBlock[] @relation("TemplateBlockChildren")
+
+  taskTemplateId    String?
+  taskTemplate      TaskTemplate?    @relation(fields: [taskTemplateId], references: [id], onDelete: Cascade)
+  projectTemplateId String?
+  projectTemplate   ProjectTemplate? @relation(fields: [projectTemplateId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskTemplateId])
+  @@index([projectTemplateId])
+  @@index([parentId])
+}
+
+model TaskProperty {
+  id       String       @id @default(cuid())
+  agencyId String
+  agency   Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  projectId String?
+  project  Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name     String
+  type     PropertyType
+  options  Json?
+  position Int
+
+  values    TaskPropertyValue[]
+  relations PropertyRelation[]
+
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  taskTemplateProperties TaskTemplateProperty[]
+
+  @@index([agencyId])
+  @@index([projectId])
+}
+
+model TaskPropertyValue {
+  taskId     String
+  task       Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  propertyId String
+  property   TaskProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  value      Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([taskId, propertyId])
+  @@index([taskId])
+  @@index([propertyId])
+}
+
+model PropertyRelation {
+  id           String       @id @default(cuid())
+  propertyId   String       @unique
+  property     TaskProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  targetModel  String
+  displayField String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProjectView {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  type      ViewType
+  filterBy  Json?
+  sortBy    Json?
+  groupBy   String?
+  isDefault Boolean  @default(false)
+  position  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model ProjectTemplateStage {
+  id             String          @id @default(cuid())
+  templateId     String
+  template       ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name           String
+  order          Int
+  isDone         Boolean         @default(false)
+  isClientReview Boolean         @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([templateId, name])
+  @@unique([templateId, order])
+  @@index([templateId])
+}
+
+model TaskTemplateProperty {
+  id           String       @id @default(cuid())
+  templateId   String
+  template     TaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  propertyId   String
+  property     TaskProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  defaultValue Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([templateId, propertyId])
+  @@index([templateId])
+  @@index([propertyId])
+}

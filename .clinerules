@@ -1,0 +1,29 @@
+# Workit.OS Development Rules & Guidelines
+
+When working on this codebase, strictly follow these rules to maintain architecture and design consistency.
+
+## 1. Tech Stack
+- **Frontend**: React 18, Vite, Wouter (for routing), Tailwind CSS, Shadcn UI, React Query, Lucide React icons.
+- **Backend**: Node.js, Express, Drizzle ORM, PostgreSQL (via `postgres.js`).
+- **Real-time**: WebSocket integration for chat and live presence.
+
+## 2. Design System & UI
+- **Shadcn UI Only**: Always utilize existing Shadcn components from `client/src/components/ui/` (e.g., `Card`, `Button`, `Input`, `Dialog`). Do NOT build generic UI components from scratch if a Shadcn component exists.
+- **Tailwind Utility Classes**: Strictly use Tailwind CSS for styling. Avoid custom CSS unless absolutely necessary (e.g., complex animations).
+- **Aesthetics**: Ensure the UI looks modern, premium, and clean. Use subtle glassmorphism (`bg-white/70 backdrop-blur-sm`), rounded corners (`rounded-xl`), and soft borders (`border-white/20`).
+
+## 3. Database & State Management
+- **No Mock Data**: Always fetch data from the PostgreSQL database using API routes. Do NOT hardcode mock data for lists, charts, or dropdowns.
+- **Schema**: Refer strictly to `shared/schema.ts` for database shapes. When adding new features, ensure they map correctly to the existing schema or cleanly extend it.
+- **React Query**: Use `@tanstack/react-query` for all data fetching and mutations (`useQuery`, `useMutation`, `queryClient.invalidateQueries`). Use the custom `apiRequest` wrapper for fetching.
+
+## 4. Workflows & Architecture
+- **Storage Abstraction**: All database queries must go through `server/storage.ts` using the `IStorage` interface. Never execute Drizzle queries directly inside `server/routes.ts`.
+- **API Routing**: Define endpoints in `server/routes.ts`. Ensure they are properly protected by checking `req.isAuthenticated()` and verifying `req.user`.
+- **Client Scoping**: Remember that client-portal users (`role === "CLIENT"`) have restricted access. Only allow them access to their designated projects, files, and chat channels.
+
+## 5. Coding Standards
+- **TypeScript**: Strictly enforce TypeScript types. Avoid `any`. Use the types exported from `shared/schema.ts`.
+- **Clean Code**: Keep components modular. If a page file exceeds ~500 lines, extract logical sections (e.g., modals, large tables) into separate components. 
+
+*Follow these rules closely to maintain a scalable, cohesive, and high-performance product.*

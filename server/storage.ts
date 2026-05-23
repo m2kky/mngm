@@ -4,7 +4,7 @@ import { db } from "./db";
 import {
   users, agencies, clients, projects, projectStages, tasks,
   timeEntries, taskComments, fileAssets, notifications, invitations,
-  chatChannels, chatMessages, attendanceRecords, pages,
+  chatChannels, chatMessages, attendanceRecords, pages, verifications,
 } from "@shared/schema";
 import {
   User, InsertUser,
@@ -24,6 +24,7 @@ import {
   ChatMessage, InsertChatMessage,
   AttendanceRecord, InsertAttendanceRecord,
   Page, InsertPage,
+  Verification, InsertVerification,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -110,6 +111,11 @@ export interface IStorage {
   createPage(page: InsertPage): Promise<Page>;
   updatePage(id: string, updates: Partial<InsertPage>): Promise<Page | undefined>;
   deletePage(id: string): Promise<boolean>;
+
+  // Verification methods
+  createVerification(identifier: string, value: string, expiresAt: Date): Promise<Verification>;
+  getVerification(identifier: string, value: string): Promise<Verification | undefined>;
+  deleteVerification(id: string): Promise<boolean>;
 }
 
 
@@ -462,8 +468,34 @@ export class DrizzleStorage implements IStorage {
   }
 
   async deletePage(id: string): Promise<boolean> {
-    const result = await db.delete(pages).where(eq(pages.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const result = await db.delete(pages).where(eq(pages.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Verification methods
+  async createVerification(identifier: string, value: string, expiresAt: Date): Promise<Verification> {
+    const result = await db.insert(verifications).values({
+      id: randomUUID(),
+      identifier,
+      value,
+      expiresAt,
+    }).returning();
+    return result[0];
+  }
+
+  async getVerification(identifier: string, value: string): Promise<Verification | undefined> {
+    const result = await db.select().from(verifications).where(
+      and(
+        eq(verifications.identifier, identifier),
+        eq(verifications.value, value)
+      )
+    );
+    return result[0];
+  }
+
+  async deleteVerification(id: string): Promise<boolean> {
+    const result = await db.delete(verifications).where(eq(verifications.id, id)).returning();
+    return result.length > 0;
   }
 }
 

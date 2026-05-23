@@ -133,20 +133,30 @@ type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 function TaskForm({
   defaultValues,
+  projectId,
   stageId,
   stages,
+  projects,
+  clients,
   agencyMembers,
   onSubmit,
   isPending,
   onClose,
+  onProjectChange,
+  onStageChange,
 }: {
   defaultValues: TaskFormValues;
+  projectId: string;
   stageId: string;
   stages: ProjectStage[];
+  projects: Project[];
+  clients: Client[];
   agencyMembers: Pick<User, "id" | "name" | "email">[];
   onSubmit: (values: TaskFormValues) => void;
   isPending: boolean;
   onClose: () => void;
+  onProjectChange: (pid: string) => void;
+  onStageChange: (sid: string) => void;
 }) {
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
@@ -250,17 +260,41 @@ function TaskForm({
           />
         </div>
 
-        <FormItem>
-          <FormLabel>Stage</FormLabel>
-          <Select disabled value={stageId}>
-            <SelectTrigger>
-              <SelectValue>{stages.find((s) => s.id === stageId)?.name ?? ""}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </FormItem>
+        <div className="grid grid-cols-2 gap-3">
+          <FormItem>
+            <FormLabel>Project</FormLabel>
+            <Select value={projectId} onValueChange={onProjectChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Project" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => {
+                  const client = clients.find(c => c.id === p.clientId);
+                  return (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} {client ? `(${client.name})` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </FormItem>
+
+          <FormItem>
+            <FormLabel>Stage</FormLabel>
+            <Select value={stageId} onValueChange={onStageChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Stage">
+                  {stages.find((s) => s.id === stageId)?.name ?? "Select Stage"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {stages.length === 0 && <SelectItem value="none" disabled>No stages available</SelectItem>}
+                {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FormItem>
+        </div>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
@@ -277,14 +311,33 @@ function TaskForm({
 // ─── Create task modal ────────────────────────────────────────────────────────
 
 function CreateTaskModal({
-  open, onClose, projectId, stageId, agencyId, userId, stages, agencyMembers,
+  open, onClose, initialProjectId, initialStageId, agencyId, userId, projects, clients, agencyMembers,
 }: {
   open: boolean; onClose: () => void;
-  projectId: string; stageId: string; agencyId: string; userId: string;
-  stages: ProjectStage[];
+  initialProjectId: string; initialStageId: string; agencyId: string; userId: string;
+  projects: Project[];
+  clients: Client[];
   agencyMembers: Pick<User, "id" | "name" | "email">[];
 }) {
   const { toast } = useToast();
+  
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [stageId, setStageId] = useState(initialStageId);
+
+  // Fetch stages dynamically based on selected project
+  const { data: stages = [] } = useQuery<ProjectStage[]>({
+    queryKey: [`/api/projects/${projectId}/stages`],
+    enabled: !!projectId,
+  });
+
+  // Keep stageId valid when project changes
+  useEffect(() => {
+    if (stages.length > 0 && !stages.find(s => s.id === stageId)) {
+      setStageId(stages[0].id);
+    } else if (stages.length === 0) {
+      setStageId("");
+    }
+  }, [stages, projectId]);
 
   const createMutation = useMutation({
     mutationFn: async (values: TaskFormValues) => {
@@ -325,12 +378,17 @@ function CreateTaskModal({
         <DialogHeader><DialogTitle>New task</DialogTitle></DialogHeader>
         <TaskForm
           defaultValues={{ title: "", description: "", type: "DESIGN", priority: "MEDIUM", dueDate: "", assigneeId: "" }}
+          projectId={projectId}
           stageId={stageId}
           stages={stages}
+          projects={projects}
+          clients={clients}
           agencyMembers={agencyMembers}
           onSubmit={(v) => createMutation.mutate(v)}
           isPending={createMutation.isPending}
           onClose={onClose}
+          onProjectChange={(pid) => setProjectId(pid)}
+          onStageChange={(sid) => setStageId(sid)}
         />
       </DialogContent>
     </Dialog>
@@ -993,6 +1051,7 @@ export default function Tasks() {
   const agencyId = currentUser?.agencyId ?? "";
   const userId   = currentUser?.id ?? "";
 
+  const [selectedClientId,   setSelectedClientId]   = useState<string>("ALL");
   const [selectedProjectId,  setSelectedProjectId]  = useState<string>("");
   const [filterPriority,     setFilterPriority]     = useState<string>("ALL");
   const [filterType,         setFilterType]         = useState<string>("ALL");
@@ -1008,13 +1067,33 @@ export default function Tasks() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
+  // Fetch clients
+  const { data: clients = [], isLoading: clientsLoading } = useQuery<Client[]>({
+    queryKey: [`/api/clients?agencyId=${agencyId}`],
+    enabled: !!agencyId,
+  });
+
   // Fetch projects
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
+  const { data: allProjects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: [`/api/projects?agencyId=${agencyId}`],
     enabled: !!agencyId,
   });
 
-  const effectiveProjectId = selectedProjectId || projects[0]?.id || "";
+  const projects = useMemo(() => {
+    if (selectedClientId === "ALL") return allProjects;
+    return allProjects.filter((p) => p.clientId === selectedClientId);
+  }, [allProjects, selectedClientId]);
+
+  // If the selected project is no longer in the filtered list, reset it
+  useEffect(() => {
+    if (projects.length > 0 && selectedProjectId) {
+      if (!projects.some(p => p.id === selectedProjectId)) {
+        setSelectedProjectId(projects[0].id);
+      }
+    }
+  }, [projects, selectedProjectId]);
+
+  const effectiveProjectId = selectedProjectId || (projects.length > 0 ? projects[0].id : "");
 
   // Fetch stages
   const { data: stages = [], isLoading: stagesLoading } = useQuery<ProjectStage[]>({
@@ -1123,23 +1202,40 @@ export default function Tasks() {
   const hasStages   = stages.length > 0;
   const anyFilter   = filterPriority !== "ALL" || filterType !== "ALL" || filterAssignee !== "ALL";
 
-  const activeProject = projects.find((p) => p.id === effectiveProjectId);
+  const activeProject = allProjects.find((p) => p.id === effectiveProjectId);
+  const activeClient = activeProject ? clients.find(c => c.id === activeProject.clientId) : null;
 
   const taskCrumbs = [
     { label: "Work" },
     { label: "Tasks", href: "/tasks" },
+    ...(activeClient ? [{ label: activeClient.name, href: "/clients" }] : []),
     ...(activeProject ? [{ label: activeProject.name }] : []),
   ];
 
   const taskSecondaryActions = (
     <>
-      {hasProjects && (
+      {clients.length > 0 && (
+        <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+          <SelectTrigger className="w-44 h-9 text-sm" data-testid="select-tasks-client">
+            <SelectValue placeholder="All Clients" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Clients</SelectItem>
+            {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      {allProjects.length > 0 && (
         <Select value={effectiveProjectId} onValueChange={setSelectedProjectId}>
           <SelectTrigger className="w-52 h-9 text-sm" data-testid="select-tasks-project">
             <SelectValue placeholder="Select project" />
           </SelectTrigger>
           <SelectContent>
-            {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            {projects.length === 0 ? (
+              <SelectItem value="none" disabled>No projects for client</SelectItem>
+            ) : (
+              projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+            )}
           </SelectContent>
         </Select>
       )}
@@ -1354,11 +1450,12 @@ export default function Tasks() {
         <CreateTaskModal
           open={createModal.open}
           onClose={() => setCreateModal({ open: false, stageId: "" })}
-          projectId={effectiveProjectId}
-          stageId={createModal.stageId}
+          initialProjectId={effectiveProjectId}
+          initialStageId={createModal.stageId}
           agencyId={agencyId}
           userId={userId}
-          stages={stages}
+          projects={allProjects}
+          clients={clients}
           agencyMembers={agencyMembers}
         />
       )}

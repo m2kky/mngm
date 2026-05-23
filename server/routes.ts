@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
+import { sendOTP } from "./email";
 import { eq, and, gte, lte, count, sql, desc, isNotNull } from "drizzle-orm";
 import { reportCache, REPORT_TTL_MS } from "./cache";
 import {
@@ -206,7 +207,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const existing = await storage.getUserByEmail(email);
       if (existing) {
-        return res.status(409).json({ error: "An account with this email already exists" });
+        if (existing.emailVerified) {
+          return res.status(409).json({ error: "An account with this email already exists" });
+        }
+        // If not verified, we can update passwordHash and proceed to send OTP again
+        const passwordHash = await bcrypt.hash(password, 12);
+        await storage.updateUser(existing.id, { passwordHash, name: name || existing.name });
       }
 
       let invitedAgencyId: string | null = null;
@@ -215,35 +221,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (inviteToken) {
         invitation = await storage.getInvitationByToken(inviteToken);
-        if (!invitation) {
-          return res.status(400).json({ error: "Invalid invite link" });
-        }
-        if (invitation.status !== "PENDING") {
-          return res.status(400).json({ error: "This invite has already been used or revoked" });
-        }
-        if (new Date(invitation.expiresAt) < new Date()) {
-          return res.status(400).json({ error: "This invite link has expired" });
-        }
-        if (invitation.email.toLowerCase() !== email) {
-          return res.status(400).json({ error: "This invite was sent to a different email address" });
+        if (!invitation || invitation.status !== "PENDING" || new Date(invitation.expiresAt) < new Date() || invitation.email.toLowerCase() !== email) {
+          return res.status(400).json({ error: "Invalid or expired invite link" });
         }
         invitedAgencyId = invitation.agencyId;
         invitedRole = invitation.role;
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
-      const parsedRole = assignableRoleSchema.safeParse(invitedRole);
-      const user = await storage.createUser({
-        name: name || null,
-        email,
-        passwordHash,
-        emailVerified: false,
-        role: parsedRole.success ? parsedRole.data : "TEAM_MEMBER",
-        status: "ACTIVE",
-        language: "en",
-        theme: "system",
-        agencyId: invitedAgencyId,
-      });
+      let user = existing;
+      if (!user) {
+        const passwordHash = await bcrypt.hash(password, 12);
+        const parsedRole = assignableRoleSchema.safeParse(invitedRole);
+        user = await storage.createUser({
+          name: name || null,
+          email,
+          passwordHash,
+          emailVerified: false,
+          role: parsedRole.success ? parsedRole.data : "TEAM_MEMBER",
+          status: "ACTIVE",
+          language: "en",
+          theme: "system",
+          agencyId: invitedAgencyId,
+        });
+      }
 
       if (invitation) {
         await storage.updateInvitation(invitation.id, {
@@ -253,8 +253,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      await storage.createVerification(email, otp, new Date(Date.now() + 15 * 60 * 1000));
+      
+      // Send OTP
+      await sendOTP(email, otp);
+
+      res.status(201).json({ message: "OTP sent", requires_verification: true });
+    } catch (e: any) {
+      console.error("REGISTER ERROR:", e);
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e), details: e });
+    }
+  });
+
+  app.post("/api/auth/verify-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) return res.status(400).json({ error: "Email and OTP are required" });
+
+      const parsedEmail = email.trim().toLowerCase();
+      const verification = await storage.getVerification(parsedEmail, otp.trim());
+      
+      if (!verification) {
+        return res.status(400).json({ error: "Invalid verification code" });
+      }
+      
+      if (new Date(verification.expiresAt) < new Date()) {
+        return res.status(400).json({ error: "Verification code has expired" });
+      }
+
+      const user = await storage.getUserByEmail(parsedEmail);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      await storage.updateUser(user.id, { emailVerified: true });
+      await storage.deleteVerification(verification.id);
+
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.status(201).json({ token, user: toSafeUser(user) });
+      res.status(200).json({ token, user: toSafeUser({ ...user, emailVerified: true }) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

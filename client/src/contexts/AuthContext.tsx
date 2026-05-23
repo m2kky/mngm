@@ -31,7 +31,8 @@ interface AuthContextType {
   userProfile: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string, inviteToken?: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string, inviteToken?: string) => Promise<{ requiresVerification: boolean }>;
+  verifyOtp: (email: string, otp: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUserProfile: () => Promise<void>;
   setUserProfile: (profile: User | null) => void;
@@ -102,6 +103,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const err = await res.json().catch(() => ({ error: "Registration failed" }));
       throw new Error(err.error || "Registration failed");
     }
+    const data = await res.json();
+    if (data.requires_verification) {
+      return { requiresVerification: true };
+    }
+    
+    // Fallback if OTP is disabled or something
+    if (data.token) {
+      setAuthToken(data.token);
+      setCurrentUser(data.user);
+    }
+    return { requiresVerification: false };
+  };
+
+  const verifyOtp = async (email: string, otp: string) => {
+    const res = await apiFetch("/api/auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Verification failed" }));
+      throw new Error(err.error || "Verification failed");
+    }
     const { token, user } = await res.json();
     setAuthToken(token);
     setCurrentUser(user);
@@ -126,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signIn,
     signUp,
+    verifyOtp,
     logout,
     refreshUserProfile,
     setUserProfile,
