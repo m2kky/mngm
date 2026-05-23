@@ -19,8 +19,11 @@ import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
   Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
-  FolderPlus, Layers,
+  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown,
 } from "lucide-react";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -759,6 +762,229 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode; title
   );
 }
 
+// ─── List View ────────────────────────────────────────────────────────────────
+
+function TaskListView({
+  stages,
+  filteredTasks,
+  taskAssigneeMap,
+  onEdit,
+}: {
+  stages: ProjectStage[];
+  filteredTasks: Task[];
+  taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
+  onEdit: (t: Task) => void;
+}) {
+  const stageMap = Object.fromEntries(stages.map((s) => [s.id, s]));
+  const grouped: Record<string, Task[]> = {};
+  stages.forEach((s) => { grouped[s.id] = []; });
+  filteredTasks.forEach((t) => {
+    if (t.stageId && grouped[t.stageId]) grouped[t.stageId].push(t);
+  });
+
+  return (
+    <div className="space-y-4">
+      {stages.map((stage) => {
+        const tasks = grouped[stage.id] ?? [];
+        return (
+          <div key={stage.id}>
+            <div className="flex items-center gap-2 mb-1.5 px-1">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: stage.color || "#94a3b8" }} />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {stage.name}
+              </span>
+              <span className="text-xs text-muted-foreground">({tasks.length})</span>
+            </div>
+            <div className="rounded-lg border border-border/50 divide-y divide-border/40 overflow-hidden">
+              {tasks.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-muted-foreground italic">No tasks</div>
+              ) : tasks.map((task) => {
+                const assignees = taskAssigneeMap[task.id] ?? [];
+                return (
+                  <div
+                    key={task.id}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 cursor-pointer transition-colors"
+                    onClick={() => onEdit(task)}
+                    data-testid={`task-list-row-${task.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{task.title}</p>
+                    </div>
+                    {task.priority && (
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 hidden sm:block ${PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.color}`}>
+                        {PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.label}
+                      </span>
+                    )}
+                    {task.type && (
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 hidden md:block ${TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG]?.color}`}>
+                        {TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG]?.label}
+                      </span>
+                    )}
+                    {task.dueDate && (
+                      <span className="text-xs text-muted-foreground shrink-0 hidden lg:block flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {format(new Date(task.dueDate), "MMM d")}
+                      </span>
+                    )}
+                    <div className="flex -space-x-1 shrink-0">
+                      {assignees.slice(0, 3).map((a) => (
+                        <AvatarBubble key={a.userId} user={{ name: a.userName, email: a.userEmail, image: a.userImage }} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Table View ───────────────────────────────────────────────────────────────
+
+type SortKey = "title" | "stage" | "priority" | "type" | "dueDate";
+
+function TaskTableView({
+  stages,
+  filteredTasks,
+  taskAssigneeMap,
+  onEdit,
+}: {
+  stages: ProjectStage[];
+  filteredTasks: Task[];
+  taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
+  onEdit: (t: Task) => void;
+}) {
+  const [sortKey, setSortKey] = useState<SortKey>("stage");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const stageOrder = Object.fromEntries(stages.map((s, i) => [s.id, i]));
+  const stageMap = Object.fromEntries(stages.map((s) => [s.id, s]));
+
+  const PRIORITY_ORDER: Record<string, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, URGENT: 3 };
+
+  const sorted = [...filteredTasks].sort((a, b) => {
+    let cmp = 0;
+    switch (sortKey) {
+      case "title":   cmp = (a.title ?? "").localeCompare(b.title ?? ""); break;
+      case "stage":   cmp = (stageOrder[a.stageId ?? ""] ?? 99) - (stageOrder[b.stageId ?? ""] ?? 99); break;
+      case "priority": cmp = (PRIORITY_ORDER[b.priority ?? ""] ?? 0) - (PRIORITY_ORDER[a.priority ?? ""] ?? 0); break;
+      case "type":    cmp = (a.type ?? "").localeCompare(b.type ?? ""); break;
+      case "dueDate": {
+        const da = a.dueDate ? new Date(a.dueDate).getTime() : 9999999999999;
+        const db = b.dueDate ? new Date(b.dueDate).getTime() : 9999999999999;
+        cmp = da - db;
+        break;
+      }
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ChevronUp className="w-3 h-3 opacity-30" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="w-3 h-3" />
+      : <ChevronDown className="w-3 h-3" />;
+  }
+
+  function TH({ col, label }: { col: SortKey; label: string }) {
+    return (
+      <TableHead
+        className="cursor-pointer select-none"
+        onClick={() => toggleSort(col)}
+      >
+        <div className="flex items-center gap-1">
+          {label} <SortIcon col={col} />
+        </div>
+      </TableHead>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border/50 overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TH col="title"    label="Title" />
+            <TH col="stage"    label="Stage" />
+            <TH col="priority" label="Priority" />
+            <TH col="type"     label="Type" />
+            <TH col="dueDate"  label="Due" />
+            <TableHead>Assignees</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sorted.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+                No tasks match the current filters.
+              </TableCell>
+            </TableRow>
+          ) : sorted.map((task) => {
+            const stage = stageMap[task.stageId ?? ""];
+            const assignees = taskAssigneeMap[task.id] ?? [];
+            return (
+              <TableRow
+                key={task.id}
+                className="cursor-pointer"
+                onClick={() => onEdit(task)}
+                data-testid={`task-table-row-${task.id}`}
+              >
+                <TableCell className="font-medium max-w-[260px]">
+                  <p className="truncate">{task.title}</p>
+                </TableCell>
+                <TableCell>
+                  {stage && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || "#94a3b8" }} />
+                      <span className="text-sm text-muted-foreground">{stage.name}</span>
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {task.priority && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.color}`}>
+                      {PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.label}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {task.type && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG]?.color}`}>
+                      {TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG]?.label}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {task.dueDate ? format(new Date(task.dueDate), "MMM d, yyyy") : "—"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex -space-x-1">
+                    {assignees.slice(0, 4).map((a) => (
+                      <AvatarBubble key={a.userId} user={{ name: a.userName, email: a.userEmail, image: a.userImage }} />
+                    ))}
+                    {assignees.length > 4 && (
+                      <div className="w-5 h-5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold border border-white dark:border-slate-700 flex items-center justify-center">
+                        +{assignees.length - 4}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 // ─── Main Kanban page ─────────────────────────────────────────────────────────
 
 export default function Tasks() {
@@ -776,6 +1002,7 @@ export default function Tasks() {
   const [createProjectOpen,  setCreateProjectOpen]  = useState(false);
   const { open: openDetail } = useDetailPanel();
   const [createStageOpen,    setCreateStageOpen]    = useState(false);
+  const [taskView, setTaskView] = useState<"board" | "list" | "table">("board");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -938,6 +1165,25 @@ export default function Tasks() {
     </Button>
   ) : null;
 
+  const viewSwitcher = (
+    <div className="flex items-center rounded-md border border-border/60 overflow-hidden h-8 shrink-0">
+      {(["board", "list", "table"] as const).map((v) => {
+        const icons = { board: <Kanban className="w-3.5 h-3.5" />, list: <LayoutList className="w-3.5 h-3.5" />, table: <Table2 className="w-3.5 h-3.5" /> };
+        return (
+          <button
+            key={v}
+            onClick={() => setTaskView(v)}
+            title={v.charAt(0).toUpperCase() + v.slice(1)}
+            className={`px-2.5 h-full flex items-center transition-colors ${taskView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+            data-testid={`button-view-${v}`}
+          >
+            {icons[v]}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const taskFilterTabs = (
     <div className="flex flex-wrap items-center gap-2">
       <Filter className="w-4 h-4 text-muted-foreground" />
@@ -984,6 +1230,7 @@ export default function Tasks() {
           </span>
         </>
       )}
+      <div className="ml-auto">{viewSwitcher}</div>
     </div>
   );
 
@@ -1026,6 +1273,20 @@ export default function Tasks() {
               </Button>
             </div>
           </div>
+        ) : taskView === "list" ? (
+          <TaskListView
+            stages={stages}
+            filteredTasks={filteredTasks}
+            taskAssigneeMap={taskAssigneeMap}
+            onEdit={(t) => openDetail("task", t.id)}
+          />
+        ) : taskView === "table" ? (
+          <TaskTableView
+            stages={stages}
+            filteredTasks={filteredTasks}
+            taskAssigneeMap={taskAssigneeMap}
+            onEdit={(t) => openDetail("task", t.id)}
+          />
         ) : (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="flex gap-5 items-start">

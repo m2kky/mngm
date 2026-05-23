@@ -1,0 +1,136 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "SF Pro Text",
+      "role": "body"
+    },
+    {
+      "family": "SF Pro Display",
+      "role": "heading"
+    },
+    {
+      "family": "Arial",
+      "role": "body"
+    },
+    {
+      "family": "Helvetica Neue",
+      "role": "body"
+    },
+    {
+      "family": "Helvetica",
+      "role": "body"
+    }
+  ],
+  "colors": {
+    "primary": "#0066CC",
+    "secondary": "#2997FF",
+    "accent": "#0071E3",
+    "background": "#FFFFFF",
+    "textPrimary": "#333336",
+    "link": "#0071E3"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "SF Pro Text",
+      "heading": "SF Pro Display"
+    },
+    "fontStacks": {
+      "heading": [
+        "SF Pro Display",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Helvetica Neue",
+        "Helvetica",
+        "Arial",
+        "sans-serif"
+      ],
+      "body": [
+        "SF Pro Text",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Helvetica Neue",
+        "Helvetica",
+        "Arial",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "SF Pro Text",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Helvetica Neue",
+        "Helvetica",
+        "Arial",
+        "sans-serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "48px",
+      "h2": "12px",
+      "body": "14px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "5px"
+  },
+  "components": {
+    "input": {
+      "background": "transparent",
+      "textColor": "#333336",
+      "borderColor": null,
+      "borderRadius": "0px",
+      "borderRadiusCorners": {
+        "topLeft": "0px",
+        "topRight": "0px",
+        "bottomRight": "0px",
+        "bottomLeft": "0px"
+      },
+      "shadow": "none"
+    }
+  },
+  "images": {
+    "favicon": "https://developer.apple.com/favicon.ico",
+    "ogImage": "https://developer.apple.com/tutorials/developer-og.jpg"
+  },
+  "__llm_logo_reasoning": {
+    "selectedIndex": -1,
+    "reasoning": "No valid brand logo - only tiny/invisible/UI icons. None of the candidates clearly represent the Apple brand in a visible and prominent way.",
+    "confidence": 0.3,
+    "rejected": true,
+    "source": "llm"
+  },
+  "personality": {
+    "tone": "professional",
+    "energy": "medium",
+    "targetAudience": "developers"
+  },
+  "designSystem": {
+    "framework": "custom",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0,
+    "colors": 0.9,
+    "overall": 0.45
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": true,
+      "llmSucceeded": true,
+      "finalSource": "llm",
+      "rawLogoSelection": {
+        "selectedLogoIndex": -1,
+        "selectedLogoReasoning": "No valid brand logo - only tiny/invisible/UI icons. None of the candidates clearly represent the Apple brand in a visible and prominent way.",
+        "confidence": 0.3
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": false,
+      "llmSucceeded": false
+    }
+  }
+}

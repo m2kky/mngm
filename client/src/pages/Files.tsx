@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/layout/PageShell";
 import { useDetailPanel } from "@/components/detail/DetailPanel";
-import { Upload, File, FileImage, FileText, FileArchive, Trash2, Download, FolderOpen, Search } from "lucide-react";
+import {
+  Upload, File, FileImage, FileText, FileArchive, Trash2,
+  Download, FolderOpen, Search, LayoutList, LayoutGrid,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -56,9 +58,9 @@ export default function Files() {
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [fileView, setFileView] = useState<"list" | "grid">("list");
   const { open: openDetail } = useDetailPanel();
 
-  // QuickCreate / palette deep-link: /files#upload opens the file picker.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.hash !== "#upload") return;
@@ -115,6 +117,33 @@ export default function Files() {
 
   const totalSize = files.reduce((s, f) => s + f.fileSize, 0);
 
+  const viewToggle = (
+    <div className="flex items-center rounded-md border border-border/60 overflow-hidden h-8 shrink-0">
+      <button
+        onClick={() => setFileView("list")}
+        title="List view"
+        data-testid="button-files-list-view"
+        className={cn(
+          "px-2.5 h-full flex items-center transition-colors",
+          fileView === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+        )}
+      >
+        <LayoutList className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={() => setFileView("grid")}
+        title="Grid view"
+        data-testid="button-files-grid-view"
+        className={cn(
+          "px-2.5 h-full flex items-center transition-colors",
+          fileView === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+        )}
+      >
+        <LayoutGrid className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+
   return (
     <PageShell
       breadcrumbs={[{ label: "Work" }, { label: "Files" }]}
@@ -141,98 +170,145 @@ export default function Files() {
         </>
       }
     >
-      <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Drop zone + search */}
-      <div
-        className={cn(
-          "border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer",
-          dragOver ? "border-primary bg-primary/5" : "border-muted hover:border-primary/40"
-        )}
-        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <Upload className={cn("h-8 w-8 mx-auto mb-2", dragOver ? "text-primary" : "text-muted-foreground")} />
-        <p className="text-sm font-medium">{dragOver ? "Drop to upload" : "Drop files here or click to browse"}</p>
-        <p className="text-xs text-muted-foreground mt-1">Max 50 MB per file</p>
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search files…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {/* File list */}
-      {isLoading ? (
-        <div className="text-center py-16 text-muted-foreground text-sm">Loading files…</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16">
-          <FolderOpen className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
-          <p className="text-muted-foreground text-sm">
-            {search ? "No files match your search" : "No files yet. Upload your first file above."}
-          </p>
+      <div className="space-y-4 max-w-5xl mx-auto">
+        {/* Drop zone */}
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer",
+            dragOver ? "border-primary bg-primary/5" : "border-muted hover:border-primary/40"
+          )}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload className={cn("h-8 w-8 mx-auto mb-2", dragOver ? "text-primary" : "text-muted-foreground")} />
+          <p className="text-sm font-medium">{dragOver ? "Drop to upload" : "Drop files here or click to browse"}</p>
+          <p className="text-xs text-muted-foreground mt-1">Max 50 MB per file</p>
         </div>
-      ) : (
-        <div className="grid gap-2">
-          {/* Column headers */}
-          <div className="hidden sm:grid grid-cols-[2rem_1fr_6rem_8rem_7rem] gap-4 px-4 text-xs text-muted-foreground uppercase tracking-wider font-medium">
-            <span />
-            <span>Name</span>
-            <span>Size</span>
-            <span>Uploaded</span>
-            <span />
+
+        {/* Search + view toggle */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search files…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
-
-          {filtered.map(file => (
-            <Card
-              key={file.id}
-              className="hover:shadow-sm transition-shadow cursor-pointer"
-              onClick={() => openDetail("file", file.id)}
-              data-testid={`file-row-${file.id}`}
-            >
-              <CardContent className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-4" onClick={() => openDetail("file", file.id)}>
-                  <FileIcon mimeType={file.mimeType} className="h-5 w-5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{file.fileName}</p>
-                    <p className="text-xs text-muted-foreground sm:hidden">{formatBytes(file.fileSize)} · {formatDate(file.createdAt)}</p>
-                  </div>
-                  <span className="hidden sm:block text-sm text-muted-foreground w-16 flex-shrink-0">{formatBytes(file.fileSize)}</span>
-                  <span className="hidden sm:block text-sm text-muted-foreground w-24 flex-shrink-0">{formatDate(file.createdAt)}</span>
-                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      asChild
-                    >
-                      <a href={file.fileUrl} download={file.fileName} target="_blank" rel="noreferrer">
-                        <Download className="h-4 w-4" />
-                      </a>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteMutation.mutate(file.id)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+          {viewToggle}
         </div>
-      )}
+
+        {/* File list / grid */}
+        {isLoading ? (
+          <div className="text-center py-16 text-muted-foreground text-sm">Loading files…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <FolderOpen className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="text-muted-foreground text-sm">
+              {search ? "No files match your search" : "No files yet. Upload your first file above."}
+            </p>
+          </div>
+        ) : fileView === "grid" ? (
+          /* ── Grid view ── */
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {filtered.map(file => (
+              <div
+                key={file.id}
+                className="group relative rounded-xl border border-border/50 bg-card hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer flex flex-col items-center gap-2 p-4"
+                onClick={() => openDetail("file", file.id)}
+                data-testid={`file-grid-${file.id}`}
+              >
+                {/* Preview or icon */}
+                {file.mimeType.startsWith("image/") ? (
+                  <img
+                    src={file.fileUrl}
+                    alt={file.fileName}
+                    className="h-16 w-full rounded-lg object-cover bg-muted"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="h-16 w-full rounded-lg bg-muted/50 flex items-center justify-center">
+                    <FileIcon mimeType={file.mimeType} className="h-8 w-8" />
+                  </div>
+                )}
+                <p className="text-xs font-medium text-center truncate w-full">{file.fileName}</p>
+                <p className="text-[10px] text-muted-foreground">{formatBytes(file.fileSize)}</p>
+
+                {/* Hover actions */}
+                <div
+                  className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <Button variant="secondary" size="icon" className="h-7 w-7" asChild>
+                    <a href={file.fileUrl} download={file.fileName} target="_blank" rel="noreferrer">
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => deleteMutation.mutate(file.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* ── List view ── */
+          <div className="grid gap-2">
+            <div className="hidden sm:grid grid-cols-[2rem_1fr_6rem_8rem_7rem] gap-4 px-4 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+              <span />
+              <span>Name</span>
+              <span>Size</span>
+              <span>Uploaded</span>
+              <span />
+            </div>
+
+            {filtered.map(file => (
+              <Card
+                key={file.id}
+                className="hover:shadow-sm transition-shadow cursor-pointer"
+                onClick={() => openDetail("file", file.id)}
+                data-testid={`file-row-${file.id}`}
+              >
+                <CardContent className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-4" onClick={() => openDetail("file", file.id)}>
+                    <FileIcon mimeType={file.mimeType} className="h-5 w-5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{file.fileName}</p>
+                      <p className="text-xs text-muted-foreground sm:hidden">{formatBytes(file.fileSize)} · {formatDate(file.createdAt)}</p>
+                    </div>
+                    <span className="hidden sm:block text-sm text-muted-foreground w-16 flex-shrink-0">{formatBytes(file.fileSize)}</span>
+                    <span className="hidden sm:block text-sm text-muted-foreground w-24 flex-shrink-0">{formatDate(file.createdAt)}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
+                        <a href={file.fileUrl} download={file.fileName} target="_blank" rel="noreferrer">
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(file.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </PageShell>
   );

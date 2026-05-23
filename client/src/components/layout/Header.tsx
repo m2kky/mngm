@@ -78,15 +78,13 @@ export function Header({ onToggleSidebar }: HeaderProps) {
               <TooltipContent side="bottom">Toggle sidebar ([)</TooltipContent>
             </Tooltip>
 
-            <Link href="/dashboard">
-              <a className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">W</span>
-                </div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent hidden sm:block">
-                  Workit.OS
-                </h1>
-              </a>
+            <Link href="/dashboard" className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">W</span>
+              </div>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent hidden sm:block">
+                Workit.OS
+              </h1>
             </Link>
           </div>
 

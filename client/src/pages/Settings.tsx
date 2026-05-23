@@ -2,7 +2,8 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, Building2, Palette, Sun, Moon, Monitor,
-  Save, Upload, Globe, ImageIcon, X,
+  Save, Upload, Globe, ImageIcon, X, User, Bell, Plug,
+  CreditCard, AlertTriangle, AlignJustify,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,7 +11,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -18,9 +19,11 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme, ACCENT_COLORS, type Theme, type Language, type AccentColor } from "@/contexts/ThemeContext";
+import {
+  useTheme, ACCENT_COLORS,
+  type Theme, type Language, type AccentColor, type Density,
+} from "@/contexts/ThemeContext";
 import { PageShell } from "@/components/layout/PageShell";
-import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
 interface Agency {
@@ -83,7 +86,9 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function GeneralSettings({ agency }: { agency: Agency }) {
+// ─── Workspace Settings ───────────────────────────────────────────────────────
+
+function WorkspaceSettings({ agency }: { agency: Agency }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -151,17 +156,13 @@ function GeneralSettings({ agency }: { agency: Agency }) {
     }
   }
 
-  function onSubmit(values: GeneralFormValues) {
-    updateMutation.mutate(values);
-  }
-
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit((v) => updateMutation.mutate(v))} className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-4 w-4 text-indigo-500" />
+              <Building2 className="h-4 w-4 text-primary" />
               Agency Identity
             </CardTitle>
             <CardDescription>
@@ -197,9 +198,7 @@ function GeneralSettings({ agency }: { agency: Agency }) {
                             src={logoValue}
                             alt="Logo preview"
                             className="h-16 w-16 rounded-lg object-cover border border-border"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                           />
                           <button
                             type="button"
@@ -233,9 +232,7 @@ function GeneralSettings({ agency }: { agency: Agency }) {
                           <Upload className="h-3.5 w-3.5" />
                           {logoUploading ? "Uploading…" : "Upload Image"}
                         </Button>
-                        <p className="text-xs text-muted-foreground">
-                          PNG, JPG, or SVG. Max 5 MB.
-                        </p>
+                        <p className="text-xs text-muted-foreground">PNG, JPG, or SVG. Max 5 MB.</p>
                         <input type="hidden" {...field} />
                       </div>
                     </div>
@@ -250,7 +247,7 @@ function GeneralSettings({ agency }: { agency: Agency }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Globe className="h-4 w-4 text-indigo-500" />
+              <Globe className="h-4 w-4 text-primary" />
               Regional Settings
             </CardTitle>
             <CardDescription>
@@ -266,15 +263,11 @@ function GeneralSettings({ agency }: { agency: Agency }) {
                   <FormLabel>Timezone</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Select timezone" /></SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       {TIMEZONES.map((tz) => (
-                        <SelectItem key={tz.value} value={tz.value}>
-                          {tz.label}
-                        </SelectItem>
+                        <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -291,15 +284,11 @@ function GeneralSettings({ agency }: { agency: Agency }) {
                   <FormLabel>Currency</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select currency" />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       {CURRENCIES.map((c) => (
-                        <SelectItem key={c.value} value={c.value}>
-                          {c.label}
-                        </SelectItem>
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -321,14 +310,17 @@ function GeneralSettings({ agency }: { agency: Agency }) {
   );
 }
 
+// ─── Appearance Settings ──────────────────────────────────────────────────────
+
 function AppearanceSettings() {
-  const { theme, setTheme, accentColor, setAccentColor, language, setLanguage } = useTheme();
+  const { theme, setTheme, accentColor, setAccentColor, language, setLanguage, density, setDensity } = useTheme();
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [pendingTheme, setPendingTheme] = useState<Theme>(theme);
   const [pendingLanguage, setPendingLanguage] = useState<Language>(language);
   const [pendingAccent, setPendingAccent] = useState<AccentColor>(accentColor);
+  const [pendingDensity, setPendingDensity] = useState<Density>(density);
 
   const saveMutation = useMutation({
     mutationFn: async (vars: { theme: Theme; language: Language; accentColor: AccentColor }) => {
@@ -344,6 +336,7 @@ function AppearanceSettings() {
       setTheme(variables.theme);
       setLanguage(variables.language);
       setAccentColor(variables.accentColor);
+      setDensity(pendingDensity);
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({ title: "Preferences saved", description: "Your appearance settings have been updated." });
     },
@@ -358,12 +351,17 @@ function AppearanceSettings() {
     { value: "system" as const, label: "System", icon: Monitor },
   ];
 
+  const densityOptions = [
+    { value: "comfortable" as const, label: "Comfortable", description: "More breathing room" },
+    { value: "compact" as const, label: "Compact", description: "More content on screen" },
+  ];
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Sun className="h-4 w-4 text-indigo-500" />
+            <Sun className="h-4 w-4 text-primary" />
             Color Mode
           </CardTitle>
           <CardDescription>
@@ -395,7 +393,7 @@ function AppearanceSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Palette className="h-4 w-4 text-indigo-500" />
+            <Palette className="h-4 w-4 text-primary" />
             Accent Color
           </CardTitle>
           <CardDescription>
@@ -421,10 +419,7 @@ function AppearanceSettings() {
             ))}
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Selected:{" "}
-            <span className="font-medium capitalize">
-              {ACCENT_COLORS.find((c) => c.value === pendingAccent)?.label}
-            </span>
+            Selected: <span className="font-medium capitalize">{ACCENT_COLORS.find((c) => c.value === pendingAccent)?.label}</span>
           </p>
         </CardContent>
       </Card>
@@ -432,7 +427,48 @@ function AppearanceSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Globe className="h-4 w-4 text-indigo-500" />
+            <AlignJustify className="h-4 w-4 text-primary" />
+            Layout Density
+          </CardTitle>
+          <CardDescription>
+            Control how compact or spacious the interface feels.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3">
+            {densityOptions.map(({ value, label, description }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setPendingDensity(value)}
+                className={cn(
+                  "flex flex-col items-start gap-1 p-4 rounded-lg border-2 text-left transition-all duration-200",
+                  pendingDensity === value
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-muted-foreground/50"
+                )}
+              >
+                <div className={cn("flex gap-0.5 mb-1", pendingDensity === value ? "opacity-100" : "opacity-40")}>
+                  {value === "comfortable" ? (
+                    [0,1,2].map(i => <div key={i} className="w-6 h-1.5 rounded-full bg-current" style={{marginBottom: i < 2 ? 3 : 0}} />)
+                  ) : (
+                    [0,1,2,3].map(i => <div key={i} className="w-6 h-1 rounded-full bg-current" style={{marginBottom: i < 3 ? 2 : 0}} />)
+                  )}
+                </div>
+                <span className={cn("text-sm font-medium", pendingDensity === value ? "text-primary" : "text-foreground")}>
+                  {label}
+                </span>
+                <span className="text-xs text-muted-foreground">{description}</span>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Globe className="h-4 w-4 text-primary" />
             Language
           </CardTitle>
           <CardDescription>
@@ -475,11 +511,133 @@ function AppearanceSettings() {
   );
 }
 
+// ─── Profile Settings ─────────────────────────────────────────────────────────
+
+function ProfileSettings() {
+  const { userProfile } = useAuth();
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <User className="h-4 w-4 text-primary" />
+            Personal Information
+          </CardTitle>
+          <CardDescription>
+            Your public profile visible to team members.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
+              {(userProfile?.name ?? userProfile?.email ?? "?")[0].toUpperCase()}
+            </div>
+            <div>
+              <p className="font-medium">{userProfile?.name ?? "—"}</p>
+              <p className="text-sm text-muted-foreground">{userProfile?.email}</p>
+              <Badge variant="outline" className="mt-1 text-xs capitalize">
+                {(userProfile?.role ?? "member").toLowerCase()}
+              </Badge>
+            </div>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            Profile editing is managed through your authentication provider. Contact an admin to update your name or role.
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Stub sections ────────────────────────────────────────────────────────────
+
+function StubSection({ icon: Icon, title, description, badge }: {
+  icon: React.ElementType; title: string; description: string; badge?: string;
+}) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Icon className="h-4 w-4 text-primary" />
+            {title}
+            {badge && <Badge variant="secondary" className="text-[10px] ml-1">{badge}</Badge>}
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="h-14 w-14 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
+              <Icon className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <p className="font-medium mb-1">Coming soon</p>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              This section is under development and will be available in an upcoming release.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
+  return (
+    <div className="space-y-6">
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            Danger Zone
+          </CardTitle>
+          <CardDescription>
+            Irreversible actions that affect your entire workspace. Proceed with caution.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/30 bg-destructive/5">
+            <div>
+              <p className="text-sm font-medium">Delete Workspace</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Permanently deletes all data, projects, tasks, and team members.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled
+              title="Contact support to delete your workspace"
+            >
+              Delete
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground px-1">
+            To delete your workspace, please contact support. This action cannot be undone.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Settings page ────────────────────────────────────────────────────────────
+
+type Section =
+  | "workspace"
+  | "appearance"
+  | "profile"
+  | "notifications"
+  | "integrations"
+  | "billing"
+  | "danger";
+
 export default function Settings() {
   const { userProfile } = useAuth();
 
   const agencyId = userProfile?.agencyId;
   const isAdmin = userProfile?.role === "OWNER" || userProfile?.role === "ADMIN";
+
+  const [activeSection, setActiveSection] = useState<Section>(isAdmin ? "workspace" : "appearance");
 
   const { data: agency, isLoading } = useQuery<Agency>({
     queryKey: ["/api/agencies", agencyId],
@@ -493,12 +651,57 @@ export default function Settings() {
     enabled: !!agencyId,
   });
 
+  type NavItem = { id: Section; label: string; icon: React.ElementType; adminOnly?: boolean; danger?: boolean };
+
+  const navItems: NavItem[] = [
+    ...(isAdmin ? [{ id: "workspace" as Section, label: "Workspace", icon: Building2, adminOnly: true }] : []),
+    { id: "appearance", label: "Appearance", icon: Palette },
+    { id: "profile", label: "Profile", icon: User },
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "integrations", label: "Integrations", icon: Plug },
+    { id: "billing", label: "Billing", icon: CreditCard },
+    ...(isAdmin ? [{ id: "danger" as Section, label: "Danger Zone", icon: AlertTriangle, danger: true }] : []),
+  ];
+
+  function renderContent() {
+    switch (activeSection) {
+      case "workspace":
+        return isLoading ? (
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <Card key={i}>
+                <CardContent className="pt-6">
+                  <div className="space-y-3">
+                    <div className="h-4 bg-muted animate-pulse rounded w-1/3" />
+                    <div className="h-9 bg-muted animate-pulse rounded" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : agency ? (
+          <WorkspaceSettings agency={agency} />
+        ) : (
+          <p className="text-muted-foreground text-sm">Could not load workspace settings.</p>
+        );
+      case "appearance":    return <AppearanceSettings />;
+      case "profile":       return <ProfileSettings />;
+      case "notifications": return <StubSection icon={Bell} title="Notification Preferences" description="Control which events trigger notifications and how you receive them." badge="Soon" />;
+      case "integrations":  return <StubSection icon={Plug} title="Integrations" description="Connect external tools like Slack, GitHub, Notion, and more to your workspace." badge="Soon" />;
+      case "billing":       return <StubSection icon={CreditCard} title="Billing & Subscription" description="Manage your plan, view invoices, and update payment methods." badge="Soon" />;
+      case "danger":        return <DangerZoneSection isAdmin={isAdmin} />;
+      default:              return null;
+    }
+  }
+
+  const activeItem = navItems.find((n) => n.id === activeSection);
+
   return (
     <PageShell
       breadcrumbs={[{ label: "Workspace" }, { label: "Settings" }]}
       title={
         <span className="flex items-center gap-2">
-          <Settings2 className="h-6 w-6 text-indigo-500" />
+          <Settings2 className="h-6 w-6 text-primary" />
           Settings
         </span>
       }
@@ -508,54 +711,35 @@ export default function Settings() {
           : "Manage your personal preferences."
       }
     >
-      <div className="max-w-2xl mx-auto">
-        {isAdmin ? (
-              <Tabs defaultValue="general">
-                <TabsList className="mb-6">
-                  <TabsTrigger value="general">General</TabsTrigger>
-                  <TabsTrigger value="team" asChild>
-                    <Link href="/team">
-                      <span className="flex items-center gap-1">Team ↗</span>
-                    </Link>
-                  </TabsTrigger>
-                  <TabsTrigger value="appearance">Appearance</TabsTrigger>
-                </TabsList>
+      <div className="flex gap-8 items-start">
+        {/* ── Left nav ── */}
+        <nav className="w-48 shrink-0 space-y-0.5" aria-label="Settings navigation">
+          {navItems.map(({ id, label, icon: Icon, danger }) => (
+            <button
+              key={id}
+              onClick={() => setActiveSection(id)}
+              data-testid={`settings-nav-${id}`}
+              className={cn(
+                "flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                danger
+                  ? activeSection === id
+                    ? "bg-destructive/10 text-destructive font-medium"
+                    : "text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                  : activeSection === id
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {label}
+            </button>
+          ))}
+        </nav>
 
-                <TabsContent value="general">
-                  {isLoading ? (
-                    <div className="space-y-4">
-                      {[1, 2].map((i) => (
-                        <Card key={i}>
-                          <CardContent className="pt-6">
-                            <div className="space-y-3">
-                              <div className="h-4 bg-muted animate-pulse rounded w-1/3" />
-                              <div className="h-9 bg-muted animate-pulse rounded" />
-                              <div className="h-4 bg-muted animate-pulse rounded w-1/3" />
-                              <div className="h-9 bg-muted animate-pulse rounded" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : agency ? (
-                    <GeneralSettings agency={agency} />
-                  ) : (
-                    <p className="text-muted-foreground">Could not load agency settings.</p>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="appearance">
-                  <AppearanceSettings />
-                </TabsContent>
-              </Tabs>
-            ) : (
-              <div className="space-y-6">
-                <div className="text-sm text-muted-foreground border border-border rounded-lg px-4 py-3 bg-muted/30">
-                  You can manage your personal preferences below. Contact an admin to change workspace-level settings.
-                </div>
-            <AppearanceSettings />
-          </div>
-        )}
+        {/* ── Content ── */}
+        <div className="flex-1 min-w-0 max-w-2xl">
+          {renderContent()}
+        </div>
       </div>
     </PageShell>
   );

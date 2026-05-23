@@ -103,8 +103,10 @@ function NavLinks({
             {section.items.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
-              const button = (
+              const navBtn = (
                 <Button
+                  key={item.name}
+                  asChild
                   variant={isActive ? "secondary" : "ghost"}
                   className={cn(
                     "w-full justify-start transition-colors duration-200 h-9",
@@ -113,27 +115,24 @@ function NavLinks({
                     collapsed && "px-2 justify-center",
                   )}
                 >
-                  <Icon className={cn("h-4 w-4", !collapsed && "mr-3")} />
-                  {!collapsed && (
-                    <>
-                      <span>{item.name}</span>
-                      {item.shortcut && (
-                        <span className="ml-auto text-[10px] font-mono text-muted-foreground opacity-60">
-                          {item.shortcut}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  <Link href={item.href} onClick={onNavigate}>
+                    <Icon className={cn("h-4 w-4", !collapsed && "mr-3")} />
+                    {!collapsed && (
+                      <>
+                        <span>{item.name}</span>
+                        {item.shortcut && (
+                          <span className="ml-auto text-[10px] font-mono text-muted-foreground opacity-60">
+                            {item.shortcut}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </Link>
                 </Button>
-              );
-              const linked = (
-                <Link key={item.name} href={item.href}>
-                  <a onClick={onNavigate}>{button}</a>
-                </Link>
               );
               return collapsed ? (
                 <Tooltip key={item.name}>
-                  <TooltipTrigger asChild>{linked}</TooltipTrigger>
+                  <TooltipTrigger asChild>{navBtn}</TooltipTrigger>
                   <TooltipContent side="right">
                     {item.name}
                     {item.shortcut && (
@@ -142,7 +141,7 @@ function NavLinks({
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                linked
+                navBtn
               );
             })}
           </div>

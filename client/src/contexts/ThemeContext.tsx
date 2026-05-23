@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark" | "system";
 export type Language = "en" | "ar";
+export type Density = "comfortable" | "compact";
 
 export const ACCENT_COLORS = [
   { label: "Indigo", value: "indigo", hsl: "231, 98%, 65%" },
@@ -18,9 +19,11 @@ interface ThemeContextType {
   theme: Theme;
   language: Language;
   accentColor: AccentColor;
+  density: Density;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
   setAccentColor: (color: AccentColor) => void;
+  setDensity: (density: Density) => void;
   isRTL: boolean;
 }
 
@@ -56,6 +59,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return stored || "indigo";
   });
 
+  const [density, setDensityState] = useState<Density>(() => {
+    const stored = localStorage.getItem("wk_density") as Density;
+    return stored || "comfortable";
+  });
+
   const isRTL = language === "ar";
 
   useEffect(() => {
@@ -86,17 +94,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (preset) applyAccentColor(preset.hsl);
   }, [accentColor]);
 
+  useEffect(() => {
+    localStorage.setItem("wk_density", density);
+    document.documentElement.setAttribute("data-density", density);
+  }, [density]);
+
   const setAccentColor = (color: AccentColor) => {
     setAccentColorState(color);
+  };
+
+  const setDensity = (d: Density) => {
+    setDensityState(d);
   };
 
   const value = {
     theme,
     language,
     accentColor,
+    density,
     setTheme,
     setLanguage,
     setAccentColor,
+    setDensity,
     isRTL,
   };
 
