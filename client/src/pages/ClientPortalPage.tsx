@@ -15,9 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
+import { useState } from "react";
+import { TaskReviewModal } from "@/components/client-portal/TaskReviewModal";
 
 export default function ClientPortalPage() {
   const { userProfile, logoutMutation } = useAuth();
+  const [reviewTask, setReviewTask] = useState<Task | null>(null);
   
   const { data: tasks, isLoading } = useQuery<Task[]>({
     queryKey: ["/api/client-portal/tasks"],
@@ -117,7 +120,7 @@ export default function ClientPortalPage() {
         {/* Task Lists */}
         <div className="space-y-8">
           {reviewTasks.length > 0 && (
-            <TaskSection title="Pending Your Review" tasks={reviewTasks as any} type="review" />
+            <TaskSection title="Pending Your Review" tasks={reviewTasks as any} type="review" onTaskClick={setReviewTask} />
           )}
           
           {inProgressTasks.length > 0 && (
@@ -144,6 +147,12 @@ export default function ClientPortalPage() {
           )}
         </div>
       </main>
+
+      <TaskReviewModal 
+        task={reviewTask}
+        isOpen={!!reviewTask}
+        onClose={() => setReviewTask(null)}
+      />
     </div>
   );
 }
@@ -170,7 +179,7 @@ function StatCard({ title, value, icon, delay }: { title: string; value: number;
   );
 }
 
-function TaskSection({ title, tasks, type }: { title: string; tasks: Task[]; type: "review" | "progress" | "completed";  }) {
+function TaskSection({ title, tasks, type, onTaskClick }: { title: string; tasks: Task[]; type: "review" | "progress" | "completed"; onTaskClick?: (t: Task) => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -181,7 +190,11 @@ function TaskSection({ title, tasks, type }: { title: string; tasks: Task[]; typ
       <h3 className="text-xl font-semibold tracking-tight">{title}</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {tasks.map((task) => (
-          <Card key={task.id} className="group border border-border/50 shadow-sm hover:shadow-md hover:border-indigo-500/30 transition-all duration-300 cursor-pointer overflow-hidden dark:bg-white/5">
+          <Card 
+            key={task.id} 
+            className={`group border border-border/50 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden dark:bg-white/5 ${type === "review" ? "cursor-pointer hover:border-indigo-500/30" : ""}`}
+            onClick={() => type === "review" && onTaskClick?.(task)}
+          >
             <CardContent className="p-5">
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-4">

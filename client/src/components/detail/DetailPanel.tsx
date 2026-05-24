@@ -289,10 +289,12 @@ function TaskDetail({ id }: { id: string }) {
     queryKey: [`/api/tasks/${id}/assignees`],
   });
 
-  const { data: agencyMembers = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image">>>({
+  const { data: allAgencyMembers = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image" | "role">>>({
     queryKey: [`/api/agencies/${agencyId}/users`],
     enabled: !!agencyId,
   });
+
+  const agencyMembers = useMemo(() => allAgencyMembers.filter(m => m.role !== "CLIENT"), [allAgencyMembers]);
 
   const { data: stages = [] } = useQuery<ProjectStage[]>({
     queryKey: [`/api/agencies/${agencyId}/project-stages`],

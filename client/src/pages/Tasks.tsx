@@ -1294,10 +1294,12 @@ export default function Tasks() {
   }, [rawTasks, effectiveProjectId, selectedClientId, projects]);
 
   // Fetch agency members (for assignee selector + filter)
-  const { data: agencyMembers = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
+  const { data: allAgencyMembers = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image" | "role">[]>({
     queryKey: [`/api/agencies/${agencyId}/users`],
     enabled: !!agencyId,
   });
+
+  const agencyMembers = useMemo(() => allAgencyMembers.filter(u => u.role !== "CLIENT"), [allAgencyMembers]);
 
   // Fetch all task-assignee mappings for the agency in one call
   const { data: projectTaskAssignees = [] } = useQuery<TaskAssigneeEntry[]>({

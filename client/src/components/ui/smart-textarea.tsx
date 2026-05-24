@@ -9,6 +9,7 @@ interface UserRow {
   id: string;
   name: string;
   email: string;
+  role: string;
 }
 
 interface TaskRow {
@@ -33,10 +34,12 @@ export function SmartTextarea({ value, onChange, onKeyDown, placeholder, classNa
   const { currentUser } = useAuth();
   const agencyId = currentUser?.agencyId;
 
-  const { data: users = [] } = useQuery<UserRow[]>({
+  const { data: allUsers = [] } = useQuery<UserRow[]>({
     queryKey: [`/api/agencies/${agencyId}/users`],
     enabled: !!agencyId,
   });
+
+  const users = useMemo(() => allUsers.filter(u => u.role !== "CLIENT"), [allUsers]);
 
   const { data: tasks = [] } = useQuery<TaskRow[]>({
     queryKey: ["/api/tasks"],

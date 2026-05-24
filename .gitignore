@@ -7,7 +7,5 @@ vite.config.ts.*
 *storybook.log
 storybook-static
 
-playwright-report/
-test-results/
 graphify-out/
 .env.e2e

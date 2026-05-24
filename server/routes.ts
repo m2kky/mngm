@@ -1918,18 +1918,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Returns tasks for a project, only if that project belongs to this client
+  // Returns tasks for a project, or all tasks for the client if no projectId provided
   app.get("/api/client-portal/tasks", requireAuth, requireClientRole, async (req: any, res) => {
     try {
       const { projectId } = req.query;
-      if (!projectId) return res.status(400).json({ error: "projectId is required" });
-      // Verify the project belongs to THIS client (not just any agency project)
-      const project = await storage.getProject(projectId as string);
+      if (projectId) {
+        // Verify the project belongs to THIS client (not just any agency project)
+        const project = await storage.getProject(projectId as string);
+        if (!project || project.clientId !== req.me.clientId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+        const tasks = await storage.getTasks({ projectId: projectId as string, agencyId: req.me.agencyId });
+        return res.json(tasks);
+      }
+
+      // Fetch all projects for the client
+      const projects = await storage.getProjects({ clientId: req.me.clientId });
+      const allTasks = [];
+      for (const p of projects) {
+        const tasksForProject = await storage.getTasks({ projectId: p.id, agencyId: req.me.agencyId });
+        // Embed the project name for UI convenience
+        allTasks.push(...tasksForProject.map(t => ({ ...t, project: { id: p.id, name: p.name } })));
+      }
+      res.json(allTasks);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Client reviews a task
+  app.post("/api/client-portal/tasks/:taskId/review", requireAuth, requireClientRole, async (req: any, res) => {
+    try {
+      const { taskId } = req.params;
+      const { outcome, comment } = req.body;
+      
+      if (!["APPROVED", "CHANGES_REQUESTED"].includes(outcome)) {
+        return res.status(400).json({ error: "Invalid outcome" });
+      }
+
+      const task = await storage.getTask(taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+
+      const project = await storage.getProject(task.projectId);
       if (!project || project.clientId !== req.me.clientId) {
         return res.status(403).json({ error: "Forbidden" });
       }
-      const tasks = await storage.getTasks({ projectId: projectId as string, agencyId: req.me.agencyId });
-      res.json(tasks);
+
+      // Update task review status
+      const updatedTask = await storage.updateTask(taskId, {
+        reviewStatus: outcome,
+        [outcome === "APPROVED" ? "approvedAt" : "rejectedAt"]: new Date().toISOString()
+      });
+
+      // Add comment if provided
+      if (comment?.trim()) {
+        await storage.createTaskComment({
+          taskId,
+          content: comment.trim(),
+          agencyId: req.me.agencyId,
+          authorUserId: req.userId,
+        });
+      }
+
+      res.json(updatedTask);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2252,50 +2303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ─── Client Portal ─────────────────────────────────────────────────────────────
 
-  app.get("/api/client-portal/tasks", requireAuth, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.userId);
-      if (user?.role !== "CLIENT") {
-        return res.status(403).json({ error: "Access denied. Only clients can access this portal." });
-      }
-
-      const portalUser = await storage.getClientPortalUserByUserId(user.id);
-      if (!portalUser) {
-        return res.status(404).json({ error: "Client portal configuration not found." });
-      }
-
-      // Fetch all tasks for this client (using portalUser.clientId)
-      // Note: We need a getTasks method that supports clientId filtering if tasks are directly linked, 
-      // but wait, tasks belong to a project, and projects belong to a client!
-      // Let's get all projects for the client first.
-      const projects = await storage.getProjects({ clientId: portalUser.clientId });
-      const projectIds = projects.map(p => p.id);
-
-      if (projectIds.length === 0) {
-        return res.json([]);
-      }
-
-      // Fetch all tasks in these projects that are visible to the client (e.g. stage.isClientReview)
-      // Since we don't have a direct 'clientId' on task, we query by projects.
-      // For now, we'll fetch all tasks in the client's projects and manually filter or just return them.
-      // Better yet, we can filter them by stages that have isClientReview = true.
-      
-      const allTasks = [];
-      for (const projectId of projectIds) {
-        const tasksForProject = await storage.getTasks({ projectId });
-        allTasks.push(...tasksForProject);
-      }
-
-      // In a real scenario, you'd only return tasks that have a stage with isClientReview = true, 
-      // or tasks specifically marked for client visibility. Let's return all tasks in the client's projects for now 
-      // and they can be filtered by the frontend if needed.
-      res.json(allTasks);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
 
   // ─── Dashboard ───────────────────────────────────────────────────────────────
 
