@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import {
   CheckSquare, FileText, FolderOpen, User as UserIcon, Hash,
   Download, ExternalLink, Trash2, Send, Loader2, Calendar, Flag, Tag,
-  MessageSquare, Activity, Paperclip, Info,
+  MessageSquare, Activity, Paperclip, Info, CheckCircle2, Circle,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,7 +34,7 @@ import type { Task, Page, User, TaskComment } from "@shared/schema";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type DetailKind = "task" | "page" | "file" | "member" | "channel";
+export type DetailKind = "task" | "page" | "file" | "member" | "channel" | "client" | "project";
 
 const PARAM_FOR: Record<DetailKind, string> = {
   task: "task",
@@ -41,9 +42,11 @@ const PARAM_FOR: Record<DetailKind, string> = {
   file: "file",
   member: "member",
   channel: "channel",
+  client: "client",
+  project: "project",
 };
 
-const ALL_KINDS: DetailKind[] = ["task", "page", "file", "member", "channel"];
+const ALL_KINDS: DetailKind[] = ["task", "page", "file", "member", "channel", "client", "project"];
 const STACK_PARAM = "detail";
 
 interface DetailEntry {
@@ -173,6 +176,8 @@ function DetailPanelHost() {
           entry.kind === "file"    ? <FileDetail    id={entry.id} /> :
           entry.kind === "member"  ? <MemberDetail  id={entry.id} /> :
           entry.kind === "channel" ? <ChannelDetail id={entry.id} /> :
+          entry.kind === "client"  ? <ClientDetail  id={entry.id} /> :
+          entry.kind === "project" ? <ProjectDetail id={entry.id} /> :
           null;
         // Stacked panels: each successive panel is slightly offset for context
         const offset = (stack.length - 1 - i) * 32;
@@ -180,6 +185,7 @@ function DetailPanelHost() {
           <Sheet key={`${entry.kind}:${entry.id}`} open onOpenChange={onOpenChange}>
             <SheetContent
               side="right"
+              aria-describedby={undefined}
               className="w-full sm:max-w-xl p-0 flex flex-col"
               style={isTop ? undefined : { transform: `translateX(-${offset}px)`, opacity: 0.6 }}
             >
@@ -283,6 +289,11 @@ function TaskDetail({ id }: { id: string }) {
 
   const { data: agencyMembers = [] } = useQuery<Array<Pick<User, "id" | "name" | "email" | "image">>>({
     queryKey: [`/api/agencies/${agencyId}/users`],
+    enabled: !!agencyId,
+  });
+
+  const { data: stages = [] } = useQuery<ProjectStage[]>({
+    queryKey: [`/api/agencies/${agencyId}/project-stages`],
     enabled: !!agencyId,
   });
 
@@ -424,6 +435,24 @@ function TaskDetail({ id }: { id: string }) {
           </Form>
 
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Stage / Status</label>
+              <Select value={task.stageId ?? ""} onValueChange={(v) => updateTask.mutate({ stageId: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color || "#94a3b8" }} />
+                        {s.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">Priority</label>
               <Select value={task.priority} onValueChange={(v) => updateTask.mutate({ priority: v })}>
@@ -901,6 +930,7 @@ function ChannelDetail({ id }: { id: string }) {
 
 
 function ClientDetail({ id }: { id: string }) {
+  const { open } = useDetailPanel();
   const { data: client, isLoading } = useQuery({
     queryKey: ["/api/clients", id],
     queryFn: async () => {
@@ -910,13 +940,18 @@ function ClientDetail({ id }: { id: string }) {
     }
   });
 
-  const { data: projects } = useQuery({
-    queryKey: ["/api/projects"],
+  const toggleTask = useMutation({
+    mutationFn: (task: any) =>
+      apiRequest("PUT", `/api/tasks/${task.id}`, {
+        completedAt: task.completedAt ? null : new Date().toISOString(),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
   });
 
-  const { data: tasks } = useQuery({
-    queryKey: ["/api/tasks"],
-  });
+  const { data: projects } = useQuery({ queryKey: ["/api/projects"] });
+  const { data: tasks } = useQuery({ queryKey: ["/api/tasks"] });
 
   if (isLoading || !client) {
     return (
@@ -928,7 +963,7 @@ function ClientDetail({ id }: { id: string }) {
 
   const clientProjects = projects?.filter((p: any) => p.clientId === id) || [];
   const clientTasks = tasks?.filter((t: any) => clientProjects.some((p: any) => p.id === t.projectId)) || [];
-  const completedTasks = clientTasks.filter((t: any) => t.isCompleted).length;
+  const completedTasks = clientTasks.filter((t: any) => !!t.completedAt).length;
 
   return (
     <PanelShell
@@ -940,51 +975,107 @@ function ClientDetail({ id }: { id: string }) {
         </Badge>
       }
     >
-      <ScrollArea className="flex-1 px-6 py-4">
-        <div className="space-y-6">
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="bg-muted/30 border-none shadow-none">
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{clientProjects.length}</p>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Projects</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/30 border-none shadow-none">
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{clientTasks.length}</p>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Tasks</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/30 border-none shadow-none">
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{completedTasks}</p>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Completed</p>
-              </CardContent>
-            </Card>
-          </div>
+      <Tabs defaultValue="overview" className="flex-1 flex flex-col h-full">
+        <div className="px-6 border-b">
+          <TabsList className="w-full justify-start h-auto rounded-none border-b bg-transparent p-0">
+            <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent">Overview</TabsTrigger>
+            <TabsTrigger value="projects" className="rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent">Projects</TabsTrigger>
+            <TabsTrigger value="tasks" className="rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent">Tasks</TabsTrigger>
+          </TabsList>
+        </div>
+        <ScrollArea className="flex-1">
+          <TabsContent value="overview" className="p-6 m-0 outline-none space-y-6">
+            <div className="grid grid-cols-3 gap-4">
+              <Card className="bg-muted/30 border-none shadow-none">
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{clientProjects.length}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Projects</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/30 border-none shadow-none">
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{clientTasks.length}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Tasks</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/30 border-none shadow-none">
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{completedTasks}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Completed</p>
+                </CardContent>
+              </Card>
+            </div>
+            {/* Quick Actions Placeholder */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="w-full">Edit Client</Button>
+            </div>
+          </TabsContent>
 
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Projects</h3>
+          <TabsContent value="projects" className="p-6 m-0 outline-none space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Client Projects</h3>
+              <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                <FolderOpen className="h-3.5 w-3.5" /> New Project
+              </Button>
+            </div>
             {clientProjects.length > 0 ? (
               <div className="space-y-2">
                 {clientProjects.map((p: any) => (
-                  <div key={p.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
+                  <div
+                    key={p.id}
+                    onClick={() => open({ kind: "project", id: p.id })}
+                    className="p-3 bg-card border rounded-lg flex justify-between items-center cursor-pointer hover:border-primary transition-colors"
+                  >
                     <span className="font-medium text-sm">{p.name}</span>
                     <Badge variant="secondary">{tasks?.filter((t: any) => t.projectId === p.id).length || 0} Tasks</Badge>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No projects assigned.</p>
+              <PanelEmpty message="No projects assigned." />
             )}
-          </div>
-        </div>
-      </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="tasks" className="p-6 m-0 outline-none space-y-4">
+             <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Client Tasks</h3>
+            </div>
+            {clientTasks.length > 0 ? (
+              <div className="space-y-2">
+                {clientTasks.map((t: any) => (
+                  <div 
+                    key={t.id} 
+                    onClick={() => open({ kind: "task", id: t.id })}
+                    className="p-3 bg-card border rounded-lg flex justify-between items-center cursor-pointer hover:border-primary transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTask.mutate(t);
+                        }}
+                        className="cursor-pointer flex items-center justify-center shrink-0"
+                      >
+                        {!!t.completedAt ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground hover:text-green-500" />}
+                      </div>
+                      <span className="font-medium text-sm line-clamp-1">{t.title}</span>
+                    </div>
+                    <Badge variant="secondary" className="text-[10px] whitespace-nowrap shrink-0">{t.stageId ? "Active" : "Draft"}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <PanelEmpty message="No tasks assigned." />
+            )}
+          </TabsContent>
+        </ScrollArea>
+      </Tabs>
     </PanelShell>
   );
 }
 
 function ProjectDetail({ id }: { id: string }) {
+  const { open } = useDetailPanel();
   const { data: project, isLoading } = useQuery({
     queryKey: ["/api/projects", id],
     queryFn: async () => {
@@ -994,9 +1085,18 @@ function ProjectDetail({ id }: { id: string }) {
     }
   });
 
-  const { data: tasks } = useQuery({
-    queryKey: ["/api/tasks"],
+  const toggleTask = useMutation({
+    mutationFn: (task: any) =>
+      apiRequest("PUT", `/api/tasks/${task.id}`, {
+        completedAt: task.completedAt ? null : new Date().toISOString(),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
   });
+
+  const { data: tasks } = useQuery({ queryKey: ["/api/tasks"] });
+  const { data: clients } = useQuery({ queryKey: ["/api/clients"] });
 
   if (isLoading || !project) {
     return (
@@ -1007,8 +1107,9 @@ function ProjectDetail({ id }: { id: string }) {
   }
 
   const projectTasks = tasks?.filter((t: any) => t.projectId === id) || [];
-  const completedTasks = projectTasks.filter((t: any) => t.isCompleted).length;
+  const completedTasks = projectTasks.filter((t: any) => !!t.completedAt).length;
   const progress = projectTasks.length > 0 ? Math.round((completedTasks / projectTasks.length) * 100) : 0;
+  const client = clients?.find((c: any) => c.id === project.clientId);
 
   return (
     <PanelShell
@@ -1020,46 +1121,88 @@ function ProjectDetail({ id }: { id: string }) {
         </Badge>
       }
     >
-      <ScrollArea className="flex-1 px-6 py-4">
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="bg-muted/30 border-none shadow-none">
-              <CardContent className="p-4 text-center flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full border-4 border-indigo-100 dark:border-indigo-950 flex items-center justify-center relative overflow-hidden">
-                  <div className="absolute bottom-0 left-0 right-0 bg-indigo-500 transition-all duration-500" style={{ height: `${progress}%` }} />
-                  <span className="relative z-10 font-bold text-sm ${progress > 50 ? 'text-white' : ''}">{progress}%</span>
-                </div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Progress</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-muted/30 border-none shadow-none">
-              <CardContent className="p-4 text-center">
-                <p className="text-3xl font-bold mt-2 text-indigo-600 dark:text-indigo-400">{projectTasks.length}</p>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Total Tasks</p>
-              </CardContent>
-            </Card>
-          </div>
+      <Tabs defaultValue="overview" className="flex-1 flex flex-col h-full">
+        <div className="px-6 border-b">
+          <TabsList className="w-full justify-start h-auto rounded-none border-b bg-transparent p-0">
+            <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent">Overview</TabsTrigger>
+            <TabsTrigger value="tasks" className="rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent">Tasks</TabsTrigger>
+          </TabsList>
+        </div>
+        <ScrollArea className="flex-1">
+          <TabsContent value="overview" className="p-6 m-0 outline-none space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="bg-muted/30 border-none shadow-none">
+                <CardContent className="p-4 text-center flex flex-col items-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-indigo-100 dark:border-indigo-950 flex items-center justify-center relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-indigo-500 transition-all duration-500" style={{ height: `${progress}%` }} />
+                    <span className={`relative z-10 font-bold text-sm ${progress > 50 ? 'text-white' : ''}`}>{progress}%</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Progress</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/30 border-none shadow-none flex flex-col justify-center">
+                <CardContent className="p-4 text-center">
+                  <p className="text-3xl font-bold mt-2 text-indigo-600 dark:text-indigo-400">{projectTasks.length}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Total Tasks</p>
+                </CardContent>
+              </Card>
+            </div>
 
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Tasks</h3>
+            {client && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Client</h3>
+                <div 
+                  onClick={() => open({ kind: "client", id: client.id })}
+                  className="p-3 bg-card border rounded-lg flex items-center gap-3 cursor-pointer hover:border-primary transition-colors"
+                >
+                  <Building2 className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-medium text-sm">{client.name}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="w-full">Edit Project</Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="tasks" className="p-6 m-0 outline-none space-y-4">
+             <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Project Tasks</h3>
+              <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                <CheckSquare className="h-3.5 w-3.5" /> New Task
+              </Button>
+            </div>
             {projectTasks.length > 0 ? (
               <div className="space-y-2">
                 {projectTasks.map((t: any) => (
-                  <div key={t.id} className="p-3 bg-background border rounded-lg flex justify-between items-center">
+                  <div 
+                    key={t.id} 
+                    onClick={() => open({ kind: "task", id: t.id })}
+                    className="p-3 bg-card border rounded-lg flex justify-between items-center cursor-pointer hover:border-primary transition-colors"
+                  >
                     <div className="flex items-center gap-2">
-                      {t.isCompleted ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground" />}
-                      <span className="font-medium text-sm">{t.title}</span>
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTask.mutate(t);
+                        }}
+                        className="cursor-pointer flex items-center justify-center shrink-0"
+                      >
+                        {!!t.completedAt ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground hover:text-green-500" />}
+                      </div>
+                      <span className="font-medium text-sm line-clamp-1">{t.title}</span>
                     </div>
-                    <Badge variant="secondary" className="text-[10px]">{t.stageId ? "Active" : "Draft"}</Badge>
+                    <Badge variant="secondary" className="text-[10px] shrink-0">{t.stageId ? "Active" : "Draft"}</Badge>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No tasks in this project.</p>
+              <PanelEmpty message="No tasks in this project." />
             )}
-          </div>
-        </div>
-      </ScrollArea>
+          </TabsContent>
+        </ScrollArea>
+      </Tabs>
     </PanelShell>
   );
 }

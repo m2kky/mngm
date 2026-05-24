@@ -755,6 +755,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!oldTask) return res.status(404).json({ error: "Task not found" });
 
+      if (data.stageId && data.stageId !== oldTask.stageId) {
+        const stages = await storage.getProjectStages(oldTask.agencyId);
+        const newStage = stages.find(s => s.id === data.stageId);
+        if (newStage?.isDone) {
+          data.completedAt = new Date().toISOString();
+        } else if (oldTask.completedAt && data.completedAt === undefined) {
+          data.completedAt = null;
+        }
+      }
+
       const task = await storage.updateTask(req.params.id, data);
       
       if (!task) return res.status(500).json({ error: "Failed to update task" });

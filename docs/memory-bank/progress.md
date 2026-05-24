@@ -63,4 +63,5 @@ Workit.OS has a robust, fully-functioning core architecture with high-fidelity m
 ---
 
 ## Session Logs
+- **[May 24, 2026 Session Log](file:///d:/Codes_Projects/mngm/docs/memory-bank/session-logs-may-24.md)**: PostgreSQL Database Fix, Global Task Views, and Detail Panel Expansion.
 - **[May 23, 2026 Session Log](file:///d:/Codes_Projects/mngm/docs/memory-bank/session-logs-may-23.md)**: Activity Feed Realtime setup, Client Portal Architecture, Invitations API, and Premium UI generation.

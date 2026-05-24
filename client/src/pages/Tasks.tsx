@@ -19,7 +19,7 @@ import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
   Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
-  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown, Play,
+  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown, Play, Briefcase, Folder,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -465,10 +465,19 @@ function TaskCard({
             {task.title}
           </p>
 
-          <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="truncate max-w-[100px] font-medium" title={client?.name}>{client?.name || "No Client"}</span>
-            <span className="text-slate-300 dark:text-slate-600">•</span>
-            <span className="truncate max-w-[100px]" title={project?.name}>{project?.name || "No Project"}</span>
+          <div className="flex flex-wrap gap-1 mt-1.5 mb-0.5">
+            {client && (
+              <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 dark:text-indigo-400 max-w-[120px]" title={client.name}>
+                <Briefcase className="w-2.5 h-2.5 mr-1 shrink-0" />
+                <span className="truncate">{client.name}</span>
+              </span>
+            )}
+            {project && (
+              <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-500 dark:bg-amber-500/20 dark:text-amber-400 max-w-[120px]" title={project.name}>
+                <Folder className="w-2.5 h-2.5 mr-1 shrink-0" />
+                <span className="truncate">{project.name}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-1 mt-2">
@@ -1153,7 +1162,7 @@ export default function Tasks() {
   const userId   = currentUser?.id ?? "";
 
   const [selectedClientId,   setSelectedClientId]   = useState<string>("ALL");
-  const [selectedProjectId,  setSelectedProjectId]  = useState<string>("all");
+  const [selectedProjectId,  setSelectedProjectId]  = useState<string>("ALL");
   const [filterPriority,     setFilterPriority]     = useState<string>("ALL");
   const [filterType,         setFilterType]         = useState<string>("ALL");
   const [filterAssignee,     setFilterAssignee]     = useState<string>("ALL");
@@ -1187,14 +1196,14 @@ export default function Tasks() {
 
   // If the selected project is no longer in the filtered list, reset it
   useEffect(() => {
-    if (projects.length > 0 && selectedProjectId) {
+    if (projects.length > 0 && selectedProjectId && selectedProjectId !== "ALL") {
       if (!projects.some(p => p.id === selectedProjectId)) {
-        setSelectedProjectId(projects[0].id);
+        setSelectedProjectId("ALL");
       }
     }
   }, [projects, selectedProjectId]);
 
-  const effectiveProjectId = selectedProjectId || (projects.length > 0 ? projects[0].id : "");
+  const effectiveProjectId = selectedProjectId || (projects.length > 0 ? "ALL" : "");
 
   // Fetch stages globally
   const { data: stages = [], isLoading: stagesLoading } = useQuery<ProjectStage[]>({
@@ -1213,10 +1222,20 @@ export default function Tasks() {
   }, [stages]);
 
   // Fetch tasks
-  const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: [`/api/tasks?projectId=${effectiveProjectId}`],
-    enabled: !!effectiveProjectId,
+  const { data: rawTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
+    queryKey: [`/api/tasks?agencyId=${agencyId}`],
+    enabled: !!agencyId,
   });
+
+  const allTasks = useMemo(() => {
+    if (effectiveProjectId === "ALL") {
+      if (selectedClientId !== "ALL") {
+        return rawTasks.filter(t => projects.some(p => p.id === t.projectId));
+      }
+      return rawTasks;
+    }
+    return rawTasks.filter(t => t.projectId === effectiveProjectId);
+  }, [rawTasks, effectiveProjectId, selectedClientId, projects]);
 
   // Fetch agency members (for assignee selector + filter)
   const { data: agencyMembers = [] } = useQuery<Pick<User, "id" | "name" | "email" | "image">[]>({
@@ -1224,10 +1243,10 @@ export default function Tasks() {
     enabled: !!agencyId,
   });
 
-  // Fetch all task-assignee mappings for the project in one call
+  // Fetch all task-assignee mappings for the agency in one call
   const { data: projectTaskAssignees = [] } = useQuery<TaskAssigneeEntry[]>({
-    queryKey: [`/api/projects/${effectiveProjectId}/task-assignees`],
-    enabled: !!effectiveProjectId,
+    queryKey: [`/api/agencies/${agencyId}/task-assignees`],
+    enabled: !!agencyId,
   });
 
   // Build a map: taskId → TaskAssigneeEntry[]
@@ -1292,7 +1311,7 @@ export default function Tasks() {
 
     // Optimistic update
     queryClient.setQueryData<Task[]>(
-      [`/api/tasks?projectId=${effectiveProjectId}`],
+      [`/api/tasks?agencyId=${agencyId}`],
       (prev = []) => prev.map((t) => t.id === taskId ? { ...t, stageId } : t),
     );
     moveTaskMutation.mutate({ taskId, stageId });
@@ -1335,7 +1354,10 @@ export default function Tasks() {
             {projects.length === 0 ? (
               <SelectItem value="none" disabled>No projects for client</SelectItem>
             ) : (
-              projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+              <>
+                <SelectItem value="ALL">All Projects</SelectItem>
+                {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </>
             )}
           </SelectContent>
         </Select>
