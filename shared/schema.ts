@@ -27,6 +27,7 @@ export const timeEntrySourceEnum = pgEnum("time_entry_source", ["TIMER", "MANUAL
 export const notificationChannelEnum = pgEnum("notification_channel", ["IN_APP", "EMAIL"]);
 export const blockTypeEnum = pgEnum("block_type", ["PARAGRAPH", "HEADING1", "HEADING2", "TOGGLE", "CALLOUT", "CODE", "IMAGE", "DIVIDER", "BULLET_LIST", "NUMBERED_LIST"]);
 export const propertyTypeEnum = pgEnum("property_type", ["TEXT", "NUMBER", "SELECT", "MULTI_SELECT", "DATE", "CHECKBOX", "URL", "RELATION", "ROLLUP"]);
+export const entityTypeEnum = pgEnum("entity_type", ["CLIENT", "PROJECT", "TASK"]);
 export const viewTypeEnum = pgEnum("view_type", ["BOARD", "TABLE", "CALENDAR", "GALLERY", "TIMELINE", "LIST"]);
 export const automationRunStatusEnum = pgEnum("automation_run_status", ["PENDING", "SUCCESS", "FAILED", "SKIPPED"]);
 export const notificationTypeEnum = pgEnum("notification_type", [
@@ -461,6 +462,7 @@ export const taskComments = pgTable("task_comments", {
   content: text("content").notNull(),
   mentions: text("mentions").array().notNull().default([]),
   isClientFeedback: boolean("is_client_feedback").notNull().default(false),
+  isInternal: boolean("is_internal").notNull().default(false),
   parentCommentId: text("parent_comment_id").references((): AnyPgColumn => taskComments.id, { onDelete: "set null" }),
   editedAt: timestamp("edited_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -783,57 +785,62 @@ export const templateBlocks = pgTable("template_blocks", {
   index("template_blocks_parent_id_idx").on(t.parentId),
 ]);
 
-export const taskProperties = pgTable("task_properties", {
+export const customProperties = pgTable("custom_properties", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
-  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  entityType: entityTypeEnum("entity_type").notNull(),
   name: text("name").notNull(),
   type: propertyTypeEnum("type").notNull(),
-  options: jsonb("options"),
+  options: jsonb("options"), // { id, name, color } for SELECT/MULTI_SELECT
   position: integer("position").notNull(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }), // nullable for global properties
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex("task_properties_agency_name_idx").on(t.agencyId, t.name),
-  index("task_properties_agency_id_idx").on(t.agencyId),
-  index("task_properties_project_id_idx").on(t.projectId),
+  uniqueIndex("custom_properties_agency_entity_name_idx").on(t.agencyId, t.entityType, t.name),
+  index("custom_properties_agency_id_idx").on(t.agencyId),
+  index("custom_properties_project_id_idx").on(t.projectId),
 ]);
 
-export const taskPropertyValues = pgTable("task_property_values", {
-  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
-  propertyId: text("property_id").notNull().references(() => taskProperties.id, { onDelete: "cascade" }),
+export const customPropertyValues = pgTable("custom_property_values", {
+  id: text("id").primaryKey(),
+  propertyId: text("property_id").notNull().references(() => customProperties.id, { onDelete: "cascade" }),
+  entityId: text("entity_id").notNull(), // taskId, projectId, or clientId
   value: jsonb("value").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  primaryKey({ columns: [t.taskId, t.propertyId] }),
-  index("task_property_values_task_id_idx").on(t.taskId),
-  index("task_property_values_property_id_idx").on(t.propertyId),
+  uniqueIndex("custom_property_values_property_entity_idx").on(t.propertyId, t.entityId),
+  index("custom_property_values_entity_id_idx").on(t.entityId),
 ]);
 
-export const propertyRelations = pgTable("property_relations", {
+export const views = pgTable("views", {
   id: text("id").primaryKey(),
-  propertyId: text("property_id").notNull().unique().references(() => taskProperties.id, { onDelete: "cascade" }),
-  targetModel: text("target_model").notNull(),
-  displayField: text("display_field").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const projectViews = pgTable("project_views", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  entityType: entityTypeEnum("entity_type").notNull(),
   name: text("name").notNull(),
   type: viewTypeEnum("type").notNull(),
-  filterBy: jsonb("filter_by"),
-  sortBy: jsonb("sort_by"),
-  groupBy: text("group_by"),
+  config: jsonb("config"), // { groupBy, sortBy, filters, visibleProperties }
   isDefault: boolean("is_default").notNull().default(false),
   position: integer("position").notNull(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }), // nullable if it's a global agency view
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  index("project_views_project_id_idx").on(t.projectId),
+  index("views_agency_id_idx").on(t.agencyId),
+  index("views_project_id_idx").on(t.projectId),
+]);
+
+export const stageAutomations = pgTable("stage_automations", {
+  id: text("id").primaryKey(),
+  stageId: text("stage_id").notNull().references(() => projectStages.id, { onDelete: "cascade" }),
+  trigger: text("trigger").notNull().default("ON_ENTER"), // "ON_ENTER" | "ON_EXIT"
+  actionType: text("action_type").notNull(), // "SET_VISIBILITY", "SEND_EMAIL", etc.
+  config: jsonb("config"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("stage_automations_stage_id_idx").on(t.stageId),
 ]);
 
 export const projectTemplateStages = pgTable("project_template_stages", {
@@ -854,7 +861,7 @@ export const projectTemplateStages = pgTable("project_template_stages", {
 export const taskTemplateProperties = pgTable("task_template_properties", {
   id: text("id").primaryKey(),
   templateId: text("template_id").notNull().references(() => taskTemplates.id, { onDelete: "cascade" }),
-  propertyId: text("property_id").notNull().references(() => taskProperties.id, { onDelete: "cascade" }),
+  propertyId: text("property_id").notNull().references(() => customProperties.id, { onDelete: "cascade" }),
   defaultValue: jsonb("default_value"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -972,10 +979,10 @@ export const insertWorkspaceEventSchema = createInsertSchema(workspaceEvents).om
 export const insertVectorEmbeddingSchema = createInsertSchema(vectorEmbeddings).omit({ id: true, createdAt: true });
 export const insertBlockSchema = createInsertSchema(blocks).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTemplateBlockSchema = createInsertSchema(templateBlocks).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertTaskPropertySchema = createInsertSchema(taskProperties).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertTaskPropertyValueSchema = createInsertSchema(taskPropertyValues).omit({ createdAt: true, updatedAt: true });
-export const insertPropertyRelationSchema = createInsertSchema(propertyRelations).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertProjectViewSchema = createInsertSchema(projectViews).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCustomPropertySchema = createInsertSchema(customProperties).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCustomPropertyValueSchema = createInsertSchema(customPropertyValues).omit({ createdAt: true, updatedAt: true });
+export const insertViewSchema = createInsertSchema(views).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertStageAutomationSchema = createInsertSchema(stageAutomations).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProjectTemplateStageSchema = createInsertSchema(projectTemplateStages).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskTemplatePropertySchema = createInsertSchema(taskTemplateProperties).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertChatChannelSchema = createInsertSchema(chatChannels).omit({ id: true, createdAt: true });
@@ -1023,10 +1030,10 @@ export type WorkspaceEvent = typeof workspaceEvents.$inferSelect;
 export type VectorEmbedding = typeof vectorEmbeddings.$inferSelect;
 export type Block = typeof blocks.$inferSelect;
 export type TemplateBlock = typeof templateBlocks.$inferSelect;
-export type TaskProperty = typeof taskProperties.$inferSelect;
-export type TaskPropertyValue = typeof taskPropertyValues.$inferSelect;
-export type PropertyRelation = typeof propertyRelations.$inferSelect;
-export type ProjectView = typeof projectViews.$inferSelect;
+export type CustomProperty = typeof customProperties.$inferSelect;
+export type CustomPropertyValue = typeof customPropertyValues.$inferSelect;
+export type View = typeof views.$inferSelect;
+export type StageAutomation = typeof stageAutomations.$inferSelect;
 export type ProjectStageTemplate = typeof projectTemplateStages.$inferSelect;
 export type TaskTemplateProperty = typeof taskTemplateProperties.$inferSelect;
 
@@ -1070,10 +1077,10 @@ export type InsertWorkspaceEvent = z.infer<typeof insertWorkspaceEventSchema>;
 export type InsertVectorEmbedding = z.infer<typeof insertVectorEmbeddingSchema>;
 export type InsertBlock = z.infer<typeof insertBlockSchema>;
 export type InsertTemplateBlock = z.infer<typeof insertTemplateBlockSchema>;
-export type InsertTaskProperty = z.infer<typeof insertTaskPropertySchema>;
-export type InsertTaskPropertyValue = z.infer<typeof insertTaskPropertyValueSchema>;
-export type InsertPropertyRelation = z.infer<typeof insertPropertyRelationSchema>;
-export type InsertProjectView = z.infer<typeof insertProjectViewSchema>;
+export type InsertCustomProperty = z.infer<typeof insertCustomPropertySchema>;
+export type InsertCustomPropertyValue = z.infer<typeof insertCustomPropertyValueSchema>;
+export type InsertView = z.infer<typeof insertViewSchema>;
+export type InsertStageAutomation = z.infer<typeof insertStageAutomationSchema>;
 export type InsertProjectStageTemplate = z.infer<typeof insertProjectTemplateStageSchema>;
 export type InsertTaskTemplateProperty = z.infer<typeof insertTaskTemplatePropertySchema>;
 export type ChatChannel = typeof chatChannels.$inferSelect;
