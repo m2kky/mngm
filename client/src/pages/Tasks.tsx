@@ -19,8 +19,10 @@ import { format } from "date-fns";
 import {
   Plus, GripVertical, Calendar, Flag, Tag,
   Loader2, Kanban, Filter, X, AlertCircle, UserCircle, Pencil,
-  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown, Play, Briefcase, Folder,
+  FolderPlus, Layers, LayoutList, Table2, ChevronUp, ChevronDown, Play, Briefcase, Folder, Table as TableIcon
 } from "lucide-react";
+import { ViewTabs } from "@/components/views/ViewTabs";
+import type { View } from "@shared/schema";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -29,6 +31,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, ProjectStage, Project, User, Client } from "@shared/schema";
 import { Button } from "@/components/ui/button";
+import { PropertyEditor } from "@/components/properties/PropertyEditor";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -129,6 +132,7 @@ const taskFormSchema = z.object({
   dueDate:     z.string().optional(),
   assigneeId:  z.string().optional(),
   estimatedMinutes: z.coerce.number().min(0).optional(),
+  properties: z.record(z.any()).optional(),
 });
 type TaskFormValues = z.infer<typeof taskFormSchema>;
 
@@ -160,6 +164,7 @@ function TaskForm({
   onClose: () => void;
   onProjectChange: (pid: string) => void;
   onStageChange: (sid: string) => void;
+  customProperties?: any[];
 }) {
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
@@ -313,6 +318,33 @@ function TaskForm({
           </FormItem>
         </div>
 
+        {customProperties && customProperties.length > 0 && (
+          <div className="pt-4 border-t mt-4">
+            <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-3 font-semibold">Custom Properties</h4>
+            <div className="grid grid-cols-2 gap-3">
+              {customProperties.map((prop: any) => (
+                <FormField
+                  key={prop.id}
+                  control={form.control}
+                  name={`properties.${prop.id}`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{prop.name}</FormLabel>
+                      <FormControl>
+                        <PropertyEditor
+                          property={prop}
+                          value={field.value}
+                          onChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={isPending || !projectId || !stageId}>
@@ -380,7 +412,7 @@ function CreateTaskModal({
       return task;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") ?? false });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/task-assignees`] });
       toast({ title: "Task created" });
       onClose();
@@ -534,35 +566,45 @@ function TaskCard({
 // ─── KanbanColumn ────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, tasks, activeId, onAddTask, onEdit, taskAssigneeMap, projects, clients
+  group, tasks, activeId, onAddTask, onEdit, taskAssigneeMap, projects, clients
 }: {
-  stage: ProjectStage; tasks: Task[]; activeId: string | null;
-  onAddTask: (stageId: string) => void;
+  group: { id: string; name: string; color: string; }; 
+  tasks: Task[]; activeId: string | null;
+  onAddTask?: (groupId: string) => void;
   onEdit: (task: Task) => void;
   taskAssigneeMap: Record<string, TaskAssigneeEntry[]>;
   projects: Project[];
   clients: Client[];
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage.id });
-  const columnColor = stage.color ?? "#6366f1";
+  const { setNodeRef, isOver } = useDroppable({ id: group.id });
+  const columnColor = group.color ?? "#6366f1";
+
+  // Use the color string if it's a tailwind class (e.g. 'bg-blue-100'), otherwise use inline style
+  const isTailwindColor = columnColor.startsWith("bg-");
 
   return (
     <div className="flex flex-col w-72 shrink-0">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: columnColor }} />
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{stage.name}</span>
+          {isTailwindColor ? (
+            <div className={`w-3 h-3 rounded-full ${columnColor}`} />
+          ) : (
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: columnColor }} />
+          )}
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{group.name}</span>
           <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 dark:text-slate-500 px-1.5 py-0.5 rounded-full font-medium">
             {tasks.length}
           </span>
         </div>
-        <button
-          onClick={() => onAddTask(stage.id)}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-          title="Add task"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+        {onAddTask && (
+          <button
+            onClick={() => onAddTask(group.id)}
+            className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            title="Add task"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       <div
@@ -868,7 +910,6 @@ function CreateStageModal({
                 </FormItem>
               )}
             />
-
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
               <Button type="submit" disabled={createMutation.isPending}>
@@ -1171,7 +1212,7 @@ export default function Tasks() {
   const [createProjectOpen,  setCreateProjectOpen]  = useState(false);
   const { open: openDetail } = useDetailPanel();
   const [createStageOpen,    setCreateStageOpen]    = useState(false);
-  const [taskView, setTaskView] = useState<"board" | "list" | "table">("board");
+  const [activeViewId,       setActiveViewId]       = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1188,6 +1229,21 @@ export default function Tasks() {
     queryKey: [`/api/projects?agencyId=${agencyId}`],
     enabled: !!agencyId,
   });
+
+  // Fetch custom properties for Tasks
+  const { data: customProperties = [] } = useQuery<any[]>({
+    queryKey: ["/api/custom-properties", { entityType: "TASK", projectId: selectedProjectId !== "ALL" ? selectedProjectId : undefined }],
+    enabled: !!agencyId,
+  });
+
+  // Fetch views
+  const { data: views = [], isLoading: viewsLoading } = useQuery<View[]>({
+    queryKey: ["/api/views", { entityType: "TASK" }],
+    enabled: !!agencyId,
+  });
+
+  const activeView = views.find((v) => v.id === activeViewId) || views[0] || { id: "default", type: "BOARD", config: { groupBy: "stageId" } };
+  const currentTaskView = activeView.type.toLowerCase();
 
   const projects = useMemo(() => {
     if (selectedClientId === "ALL") return allProjects;
@@ -1272,29 +1328,97 @@ export default function Tasks() {
     });
   }, [allTasks, filterPriority, filterType, filterAssignee, taskAssigneeMap]);
 
-  // Group tasks by stage
-  const tasksByStage = useMemo(() => {
+  const groupBy = activeView.config?.groupBy || "stageId";
+
+  // Build Kanban Groups dynamically
+  const kanbanGroups = useMemo(() => {
+    if (groupBy === "stageId") {
+      return stages.map((s) => ({ id: s.id, name: s.name, color: s.color ?? "bg-slate-200" }));
+    }
+    if (groupBy === "priority") {
+      return PRIORITIES.map((p) => ({ id: p, name: PRIORITY_CONFIG[p].label, color: PRIORITY_CONFIG[p].color }));
+    }
+    if (groupBy === "clientId") {
+      return [
+        { id: "unassigned", name: "No Client", color: "bg-slate-200" },
+        ...clients.map((c) => ({ id: c.id, name: c.name, color: "bg-indigo-100" }))
+      ];
+    }
+    if (groupBy === "assigneeId") {
+      return [
+        { id: "unassigned", name: "Unassigned", color: "bg-slate-200" },
+        ...agencyMembers.map((m) => ({ id: m.id, name: m.name ?? m.email, color: "bg-blue-100" }))
+      ];
+    }
+    
+    // Custom properties
+    const customProp = customProperties.find((p) => p.id === groupBy);
+    if (customProp && (customProp.type === "SELECT" || customProp.type === "MULTI_SELECT")) {
+      const options = customProp.config?.options || [];
+      return [
+        { id: "unassigned", name: "Empty", color: "bg-slate-200" },
+        ...options.map((opt: any) => ({ id: opt.value, name: opt.label, color: opt.color || "bg-slate-200" }))
+      ];
+    }
+    
+    return [{ id: "default", name: "Default Group", color: "bg-slate-200" }];
+  }, [groupBy, stages, clients, agencyMembers, customProperties]);
+
+  // Group tasks by the active group property
+  const tasksByGroup = useMemo(() => {
     const map: Record<string, Task[]> = {};
-    stages.forEach((s) => { map[s.id] = []; });
+    kanbanGroups.forEach((g) => { map[g.id] = []; });
+    
     filteredTasks.forEach((t) => {
-      if (t.stageId && map[t.stageId]) map[t.stageId].push(t);
+      let groupId = "unassigned";
+      
+      if (groupBy === "stageId") groupId = t.stageId || "unassigned";
+      else if (groupBy === "priority") groupId = t.priority || "unassigned";
+      else if (groupBy === "clientId") {
+        const proj = allProjects.find((p) => p.id === t.projectId);
+        groupId = proj?.clientId || "unassigned";
+      }
+      else if (groupBy === "assigneeId") {
+        const assignees = taskAssigneeMap[t.id] ?? [];
+        // Just take the first assignee for the board, or unassigned if none
+        groupId = assignees.length > 0 ? assignees[0].userId : "unassigned";
+      }
+      else {
+        // Custom property
+        const val = t.properties?.[groupBy];
+        groupId = val ? String(val) : "unassigned";
+      }
+
+      // Fallback to unassigned if the group ID doesn't match an existing column
+      if (!map[groupId]) groupId = "unassigned";
+      if (map[groupId]) map[groupId].push(t);
     });
     return map;
-  }, [stages, filteredTasks]);
+  }, [kanbanGroups, filteredTasks, groupBy, allProjects, taskAssigneeMap]);
 
   const activeTask = useMemo(() => allTasks.find((t) => t.id === activeId) ?? null, [allTasks, activeId]);
 
-  const moveTaskMutation = useMutation({
-    mutationFn: async ({ taskId, stageId }: { taskId: string; stageId: string }) => {
-      const res = await apiRequest("PUT", `/api/tasks/${taskId}`, { stageId });
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ taskId, data }: { taskId: string; data: any }) => {
+      const res = await apiRequest("PUT", `/api/tasks/${taskId}`, data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") ?? false });
     },
     onError: (e: Error) => {
-      toast({ title: "Failed to move task", description: e.message, variant: "destructive" });
-      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") });
+      toast({ title: "Failed to update task", description: e.message, variant: "destructive" });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/tasks") ?? false });
+    },
+  });
+
+  const assignTaskMutation = useMutation({
+    mutationFn: async ({ taskId, userIds }: { taskId: string; userIds: string[] }) => {
+      const res = await apiRequest("PUT", `/api/tasks/${taskId}/assignees`, { userIds });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0]?.toString().startsWith("/api/agencies") ?? false });
     },
   });
 
@@ -1305,16 +1429,38 @@ export default function Tasks() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const taskId  = active.id as string;
-    const stageId = over.id  as string;
+    const groupId = over.id  as string;
     const task    = allTasks.find((t) => t.id === taskId);
-    if (!task || task.stageId === stageId) return;
+    if (!task) return;
 
-    // Optimistic update
-    queryClient.setQueryData<Task[]>(
-      [`/api/tasks?agencyId=${agencyId}`],
-      (prev = []) => prev.map((t) => t.id === taskId ? { ...t, stageId } : t),
-    );
-    moveTaskMutation.mutate({ taskId, stageId });
+    if (groupBy === "stageId") {
+      if (task.stageId === groupId) return;
+      queryClient.setQueryData<Task[]>([`/api/tasks?agencyId=${agencyId}`], (prev = []) => prev.map((t) => t.id === taskId ? { ...t, stageId: groupId } : t));
+      updateTaskMutation.mutate({ taskId, data: { stageId: groupId } });
+    } else if (groupBy === "priority") {
+      if (task.priority === groupId) return;
+      queryClient.setQueryData<Task[]>([`/api/tasks?agencyId=${agencyId}`], (prev = []) => prev.map((t) => t.id === taskId ? { ...t, priority: groupId } : t));
+      updateTaskMutation.mutate({ taskId, data: { priority: groupId } });
+    } else if (groupBy === "assigneeId") {
+      const assignees = taskAssigneeMap[taskId] ?? [];
+      const currentAssignee = assignees.length > 0 ? assignees[0].userId : "unassigned";
+      if (currentAssignee === groupId) return;
+      const newUserIds = groupId === "unassigned" ? [] : [groupId];
+      assignTaskMutation.mutate({ taskId, userIds: newUserIds });
+    } else if (groupBy === "clientId") {
+      // It's tricky to change client because it requires changing project. 
+      // If client changes, we might set projectId to null, or find a default project for that client.
+      // For now, let's just show a toast that changing client via drag and drop isn't supported directly unless we find a matching project.
+      toast({ title: "Operation not supported", description: "Changing client via drag & drop is not fully supported. Change the project instead." });
+    } else {
+      // Custom Property
+      const currentVal = task.properties?.[groupBy];
+      if (currentVal === groupId || (currentVal == null && groupId === "unassigned")) return;
+      
+      const newProps = { ...(task.properties || {}), [groupBy]: groupId === "unassigned" ? null : groupId };
+      queryClient.setQueryData<Task[]>([`/api/tasks?agencyId=${agencyId}`], (prev = []) => prev.map((t) => t.id === taskId ? { ...t, properties: newProps } : t));
+      updateTaskMutation.mutate({ taskId, data: { properties: newProps } });
+    }
   }
 
   const isLoading   = projectsLoading || stagesLoading || tasksLoading;
@@ -1384,24 +1530,7 @@ export default function Tasks() {
     </Button>
   ) : null;
 
-  const viewSwitcher = (
-    <div className="flex items-center rounded-md border border-border/60 overflow-hidden h-8 shrink-0">
-      {(["board", "list", "table"] as const).map((v) => {
-        const icons = { board: <Kanban className="w-3.5 h-3.5" />, list: <LayoutList className="w-3.5 h-3.5" />, table: <Table2 className="w-3.5 h-3.5" /> };
-        return (
-          <button
-            key={v}
-            onClick={() => setTaskView(v)}
-            title={v.charAt(0).toUpperCase() + v.slice(1)}
-            className={`px-2.5 h-full flex items-center transition-colors ${taskView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
-            data-testid={`button-view-${v}`}
-          >
-            {icons[v]}
-          </button>
-        );
-      })}
-    </div>
-  );
+  const viewSwitcher = null;
 
   const taskFilterTabs = (
     <div className="flex flex-wrap items-center gap-2">
@@ -1449,7 +1578,6 @@ export default function Tasks() {
           </span>
         </>
       )}
-      <div className="ml-auto">{viewSwitcher}</div>
     </div>
   );
 
@@ -1463,7 +1591,15 @@ export default function Tasks() {
       primaryAction={taskPrimaryAction}
       tabs={taskFilterTabs}
     >
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900">
+      <ViewTabs
+        views={views}
+        activeViewId={activeViewId}
+        onViewChange={setActiveViewId}
+        entityType="TASK"
+        customProperties={customProperties}
+        agencyId={agencyId}
+      />
       {/* ── Board area ── */}
       <div className="flex-1 overflow-auto p-6">
         {isLoading ? (
@@ -1492,7 +1628,7 @@ export default function Tasks() {
               </Button>
             </div>
           </div>
-        ) : taskView === "list" ? (
+        ) : currentTaskView === "list" ? (
           <TaskListView
             stages={stages}
             filteredTasks={filteredTasks}
@@ -1501,7 +1637,7 @@ export default function Tasks() {
             projects={projects}
             clients={clients}
           />
-        ) : taskView === "table" ? (
+        ) : currentTaskView === "table" ? (
           <TaskTableView
             stages={stages}
             filteredTasks={filteredTasks}
@@ -1513,13 +1649,13 @@ export default function Tasks() {
         ) : (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="flex gap-5 items-start">
-              {stages.map((stage) => (
+              {kanbanGroups.map((group) => (
                 <KanbanColumn
-                  key={stage.id}
-                  stage={stage}
-                  tasks={tasksByStage[stage.id] ?? []}
+                  key={group.id}
+                  group={group}
+                  tasks={tasksByGroup[group.id] ?? []}
                   activeId={activeId}
-                  onAddTask={(stageId) => setCreateModal({ open: true, stageId })}
+                  onAddTask={groupBy === "stageId" ? (stageId) => setCreateModal({ open: true, stageId }) : undefined}
                   taskAssigneeMap={taskAssigneeMap}
                   onEdit={(t) => openDetail("task", t.id)}
                   projects={projects}
@@ -1527,13 +1663,15 @@ export default function Tasks() {
                 />
               ))}
               {/* Add Stage Button */}
-              <button
-                onClick={() => setCreateStageOpen(true)}
-                className="shrink-0 w-72 flex items-center justify-center gap-2 h-12 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-colors bg-slate-50/50 dark:bg-slate-800/50"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">Add Stage</span>
-              </button>
+              {groupBy === "stageId" && (
+                <button
+                  onClick={() => setCreateStageOpen(true)}
+                  className="shrink-0 w-72 flex items-center justify-center gap-2 h-12 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-colors bg-slate-50/50 dark:bg-slate-800/50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="text-sm font-medium">Add Stage</span>
+                </button>
+              )}
             </div>
 
             <DragOverlay>

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+
+  owasp-zap:
+    image: softwaresecurityproject/zap-stable
+    ports:
+      - "8080:8080"
+      - "8090:8090"
+    command: zap.sh -daemon -port 8080 -host 0.0.0.0 -config api.disablekey=true
+
+  k6:
+    image: grafana/k6
+    volumes:
+      - ./tests/load:/tests
+    # Running 'tail -f /dev/null' keeps the container alive so we can exec scripts inside it
+    entrypoint: ["tail", "-f", "/dev/null"]
+
+volumes:
+  postgres_test_data:

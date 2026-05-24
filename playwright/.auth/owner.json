@@ -1,0 +1,41 @@
+{
+  "cookies": [
+    {
+      "name": "__cf_bm",
+      "value": "P0_w5PV6Qjl8IocaROfa7J8zhT5aiM9D5L7gx.bOn4M-1779622910.7409759-1.0.1.1-N4IncUTn8.FOGslgc7HQlF.vFem5cLIKvhnHDxlARfiQ8M3n8x.r5p4Mx6ZwtVx9rvSrRPipu.q.WYHpz9tz3iFwHLyS7BRojTJ77x_6F_6oClOa2fj9L15vJ8EGW.vP",
+      "domain": ".replit.com",
+      "path": "/",
+      "expires": 1779624711.920991,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:5000",
+      "localStorage": [
+        {
+          "name": "theme",
+          "value": "system"
+        },
+        {
+          "name": "wk_density",
+          "value": "comfortable"
+        },
+        {
+          "name": "wk_token",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4NGU5Mjk0Mi00N2I4LTQxN2ItOGFjOC00OTlmOTRmYTA2NTciLCJpYXQiOjE3Nzk2MjI5MTQsImV4cCI6MTc4MjIxNDkxNH0.Ju8TTgjrVI5jliIEPdt9bnUOzz7U0gctT5IK4OUs0bg"
+        },
+        {
+          "name": "accentColor",
+          "value": "indigo"
+        },
+        {
+          "name": "language",
+          "value": "en"
+        }
+      ]
+    }
+  ]
+}

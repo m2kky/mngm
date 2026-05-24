@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "codebase-memory": {
+      "command": "d:/Codes_Projects/mngm/tools/mcp/codebase-memory-mcp/bin/codebase-memory-mcp.exe",
+      "args": [],
+      "env": {}
+    },
+    "graphify": {
+      "command": "d:/Codes_Projects/mngm/tools/mcp/graphify/.venv/Scripts/python.exe",
+      "args": ["-m", "graphify.serve", "graphify-out/graph.json"],
+      "env": {}
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://postgres:postgres@localhost:5433/mngm"],
+      "env": {}
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<INSERT_YOUR_GITHUB_TOKEN_HERE>"
+      }
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "env": {}
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "<INSERT_YOUR_BRAVE_API_KEY_HERE>"
+      }
+    },
+    "composio": {
+      "command": "npx",
+      "args": ["-y", "@composio/mcp"],
+      "env": {
+        "COMPOSIO_API_KEY": "<INSERT_YOUR_COMPOSIO_API_KEY_HERE>"
+      }
+    },
+    "notebooklm": {
+      "command": "node",
+      "args": ["d:/Codes_Projects/notebooklm-mcp/dist/index.js"],
+      "env": {}
+    }
+  }
+}

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { db } from "./db";
 import { sendOTP } from "./email";
-import { eq, and, gte, lte, count, sql, desc, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, count, sql, desc, isNotNull, isNull, inArray } from "drizzle-orm";
 import { reportCache, REPORT_TTL_MS } from "./cache";
 import {
   type User,
@@ -455,20 +455,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Clients ────────────────────────────────────────────────────────────────
 
-  app.get("/api/clients", requireAuth, async (req, res) => {
+  app.get("/api/clients", requireAuth, async (req: any, res) => {
     try {
-      const { agencyId, status } = req.query;
-      const clients = await storage.getClients({ agencyId: agencyId as string, status: status as string });
+      const user = await storage.getUser(req.userId);
+      if (!user?.agencyId) return res.status(403).json({ error: "No agency assigned" });
+      const { status } = req.query;
+      const clients = await storage.getClients({ agencyId: user.agencyId, status: status as string });
       res.json(clients);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.get("/api/clients/:id", requireAuth, async (req, res) => {
+  app.get("/api/clients/:id", requireAuth, async (req: any, res) => {
     try {
       const client = await storage.getClient(req.params.id);
       if (!client) return res.status(404).json({ error: "Client not found" });
+      const user = await storage.getUser(req.userId);
+      if (user?.agencyId !== client.agencyId) return res.status(403).json({ error: "Forbidden" });
       res.json(client);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -513,8 +517,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/clients/:id", requireAuth, async (req, res) => {
+  app.put("/api/clients/:id", requireAuth, async (req: any, res) => {
     try {
+      const existing = await storage.getClient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Client not found" });
+      const user = await storage.getUser(req.userId);
+      if (user?.agencyId !== existing.agencyId) return res.status(403).json({ error: "Forbidden" });
+
       const data = insertClientSchema.partial().parse(req.body);
       const client = await storage.updateClient(req.params.id, data);
       if (!client) return res.status(404).json({ error: "Client not found" });
@@ -524,8 +533,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/clients/:id", requireAuth, async (req, res) => {
+  app.delete("/api/clients/:id", requireAuth, async (req: any, res) => {
     try {
+      const existing = await storage.getClient(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Client not found" });
+      const user = await storage.getUser(req.userId);
+      if (user?.agencyId !== existing.agencyId) return res.status(403).json({ error: "Forbidden" });
+
       const success = await storage.deleteClient(req.params.id);
       if (!success) return res.status(404).json({ error: "Client not found" });
       res.status(204).send();
@@ -538,6 +552,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const client = await storage.getClient(req.params.id);
       if (!client) return res.status(404).json({ error: "Client not found" });
+      const user = await storage.getUser(req.userId);
+      if (user?.agencyId !== client.agencyId) return res.status(403).json({ error: "Forbidden" });
 
       const { email, name, canApprove = true, canComment = true, canViewFinancials = false } = req.body;
       if (!email || !name) {
@@ -736,7 +752,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const task = await storage.getTask(req.params.id);
       if (!task) return res.status(404).json({ error: "Task not found" });
-      res.json(task);
+
+      // Fetch custom property values
+      const pvals = await db.select().from(customPropertyValues).where(
+        eq(customPropertyValues.entityId, task.id)
+      );
+
+      const properties = pvals.reduce((acc: any, p) => {
+        acc[p.propertyId] = p.value;
+        return acc;
+      }, {});
+
+      res.json({ ...task, properties });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -753,8 +780,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/tasks", requireAuth, async (req: any, res) => {
     try {
       const data = insertTaskSchema.parse(req.body);
+      const properties = req.body.properties; // Extract custom properties
+      
       const task = await storage.createTask(data);
       
+      // Save custom properties if provided
+      if (properties && Object.keys(properties).length > 0) {
+        const valuesToInsert = Object.entries(properties).map(([propId, val]) => ({
+          id: randomUUID(),
+          propertyId: propId,
+          entityId: task.id,
+          value: val,
+        }));
+        await db.insert(customPropertyValues).values(valuesToInsert);
+      }
+
       await logActivity({
         agencyId: task.agencyId,
         actorUserId: req.userId,
@@ -766,7 +806,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         summary: "Task created",
       });
       
-      res.status(201).json(task);
+      res.status(201).json({ ...task, properties });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -775,6 +815,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/tasks/:id", requireAuth, async (req: any, res) => {
     try {
       const data = insertTaskSchema.partial().parse(req.body);
+      const properties = req.body.properties; // Extract custom properties
       const oldTask = await storage.getTask(req.params.id);
       
       if (!oldTask) return res.status(404).json({ error: "Task not found" });
@@ -792,6 +833,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const task = await storage.updateTask(req.params.id, data);
       
       if (!task) return res.status(500).json({ error: "Failed to update task" });
+
+      // Handle custom properties
+      if (properties) {
+        for (const [propId, val] of Object.entries(properties)) {
+          const existing = await db.select().from(customPropertyValues).where(and(
+            eq(customPropertyValues.propertyId, propId),
+            eq(customPropertyValues.entityId, task.id)
+          ));
+          if (existing.length > 0) {
+            await db.update(customPropertyValues).set({ value: val }).where(eq(customPropertyValues.id, existing[0].id));
+          } else {
+            await db.insert(customPropertyValues).values({
+              id: randomUUID(),
+              propertyId: propId,
+              entityId: task.id,
+              value: val,
+            });
+          }
+        }
+      }
 
       if (data.stageId && data.stageId !== oldTask.stageId) {
         const stages = await storage.getProjectStages(task.agencyId);
@@ -2238,11 +2299,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Dashboard ───────────────────────────────────────────────────────────────
 
-  app.get("/api/dashboard/stats", requireAuth, async (req, res) => {
+  app.get("/api/dashboard/stats", requireAuth, async (req: any, res) => {
     try {
-      const { agencyId, userId } = req.query;
-      if (!agencyId) return res.status(400).json({ error: "agencyId is required" });
-      const stats = await storage.getDashboardStats({ agencyId: agencyId as string, userId: userId as string });
+      const user = await storage.getUser(req.userId);
+      if (!user || !user.agencyId) return res.status(403).json({ error: "No agency assigned" });
+      
+      const stats = await storage.getDashboardStats({ agencyId: user.agencyId, userId: req.userId });
       res.json(stats);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2286,10 +2348,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertCustomPropertySchema.parse({
         ...req.body,
         agencyId: user.agencyId,
-        id: randomUUID(),
       });
 
-      const [result] = await db.insert(customProperties).values(data).returning();
+      const [result] = await db.insert(customProperties).values({
+        ...data,
+        id: randomUUID(),
+      }).returning();
       res.status(201).json(result);
     } catch (e: any) {
       res.status(400).json({ error: e.message });

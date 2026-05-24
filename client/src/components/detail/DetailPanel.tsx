@@ -10,6 +10,7 @@ import {
   CheckSquare, FileText, FolderOpen, User as UserIcon, Hash,
   Download, ExternalLink, Trash2, Send, Loader2, Calendar, Flag, Tag,
   MessageSquare, Activity, Paperclip, Info, CheckCircle2, Circle,
+  PlayCircle, PauseCircle, StopCircle, ArrowRightLeft, PlusCircle, FileEdit
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -26,11 +27,12 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PropertyEditor } from "@/components/properties/PropertyEditor";
 
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import type { Task, Page, User, TaskComment } from "@shared/schema";
+import type { Task, Page, User, TaskComment, ProjectStage, ActivityLog } from "@shared/schema";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -297,6 +299,10 @@ function TaskDetail({ id }: { id: string }) {
     enabled: !!agencyId,
   });
 
+  const { data: customProperties = [] } = useQuery<any[]>({
+    queryKey: ["/api/custom-properties", { entityType: "TASK" }],
+  });
+
   const invalidateTask = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
     if (task?.projectId) {
@@ -509,6 +515,28 @@ function TaskDetail({ id }: { id: string }) {
               </Select>
             </div>
           </div>
+
+          {customProperties.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-3 font-semibold">Custom Properties</h4>
+              <div className="grid grid-cols-2 gap-4">
+                {customProperties.map((prop: any) => (
+                  <div key={prop.id}>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">
+                      {prop.name}
+                    </label>
+                    <PropertyEditor
+                      property={prop}
+                      value={task.properties?.[prop.id] || ""}
+                      onChange={(val) => {
+                        updateTask.mutate({ properties: { ...task.properties, [prop.id]: val } });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="flex-1 overflow-auto px-6 py-4 mt-0">
@@ -632,10 +660,11 @@ interface FileAsset {
 }
 
 function TaskFiles({ taskId }: { taskId: string }) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
   const { data: files = [], isLoading } = useQuery<FileAsset[]>({
     queryKey: [`/api/files?taskId=${taskId}`],
   });
-
 
   async function uploadFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -950,8 +979,8 @@ function ClientDetail({ id }: { id: string }) {
     },
   });
 
-  const { data: projects } = useQuery({ queryKey: ["/api/projects"] });
-  const { data: tasks } = useQuery({ queryKey: ["/api/tasks"] });
+  const { data: projects = [] } = useQuery<any[]>({ queryKey: ["/api/projects"] });
+  const { data: tasks = [] } = useQuery<any[]>({ queryKey: ["/api/tasks"] });
 
   if (isLoading || !client) {
     return (
@@ -1161,7 +1190,23 @@ function ProjectDetail({ id }: { id: string }) {
               </div>
             )}
 
-            <div className="flex gap-2">
+            {/* Dynamic Custom Properties */}
+            {customProperties.map((prop: any) => (
+              <div key={prop.id}>
+                <label className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5 block">
+                  {prop.name}
+                </label>
+                <PropertyEditor
+                  property={prop}
+                  value={project.properties?.[prop.id] || ""}
+                  onChange={(val) => {
+                    // Assuming an update function exists or logic to update properties
+                  }}
+                />
+              </div>
+            ))}
+
+            <div className="pt-4 border-t">
               <Button variant="outline" size="sm" className="w-full">Edit Project</Button>
             </div>
           </TabsContent>

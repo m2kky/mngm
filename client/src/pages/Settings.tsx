@@ -622,8 +622,11 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
 
 // ─── Settings page ────────────────────────────────────────────────────────────
 
+import { PropertyManager } from "@/components/properties/PropertyManager";
+
 type Section =
   | "workspace"
+  | "custom_properties"
   | "appearance"
   | "profile"
   | "notifications"
@@ -655,6 +658,7 @@ export default function Settings() {
 
   const navItems: NavItem[] = [
     ...(isAdmin ? [{ id: "workspace" as Section, label: "Workspace", icon: Building2, adminOnly: true }] : []),
+    ...(isAdmin ? [{ id: "custom_properties" as Section, label: "Custom Properties", icon: Settings2, adminOnly: true }] : []),
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "profile", label: "Profile", icon: User },
     { id: "notifications", label: "Notifications", icon: Bell },
@@ -684,6 +688,8 @@ export default function Settings() {
         ) : (
           <p className="text-muted-foreground text-sm">Could not load workspace settings.</p>
         );
+      case "custom_properties":
+        return <PropertyManager entityType="TASK" />;
       case "appearance":    return <AppearanceSettings />;
       case "profile":       return <ProfileSettings />;
       case "notifications": return <StubSection icon={Bell} title="Notification Preferences" description="Control which events trigger notifications and how you receive them." badge="Soon" />;
